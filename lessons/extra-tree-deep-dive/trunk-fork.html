@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>줄기 분기 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/leaf-placement.html">← 잎 배치</a>
+    <h1>줄기 분기 (Fork) 탐색</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div style="position:absolute;top:12px;left:12px;font-family:'Fira Code',monospace;font-size:11px;color:#8b949e;background:rgba(13,17,23,0.8);padding:8px 12px;border-radius:6px;display:flex;flex-direction:column;gap:3px;z-index:10" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>현재 문제</h2>
+        <div class="diagram">
+<pre>
+  현재 구조:
+  │         ← 줄기 꼭대기 (어색함)
+  │╲
+  │ ╲ 가지
+  │  ╲
+  │
+  │╱
+  │   가지
+  │
+  ┃ 줄기
+  ┃
+
+  줄기가 맨 꼭대기까지 일직선으로 올라감
+  → 분기점 이후에도 줄기가 남아있어 부자연스러움
+</pre>
+        </div>
+
+        <h2>개선 방향: 분기 (Fork)</h2>
+        <div class="diagram">
+<pre>
+     ╱╲         ← 분기 후 두 가지로 갈라짐
+    ╱  ╲
+   ╱    ╲
+  ├──────┤     ← 분기점 (forkHeight)
+  │      │
+  │      │
+  ┃      ┃     ← 줄기 (분기점까지만)
+  ┃      ┃
+
+  분기점에서 줄기 종료,
+  2~3개 주가지로 갈라짐
+</pre>
+        </div>
+
+        <h2>분기 파라미터</h2>
+        <ul>
+          <li><strong>분기 높이</strong>: 줄기의 몇 %에서 갈라지는지</li>
+          <li><strong>분기 수</strong>: 2개 (Y자) 또는 3개</li>
+          <li><strong>벌어짐 각도</strong>: 분기된 가지가 얼마나 벌어지는지</li>
+          <li><strong>분기 가지 길이</strong>: 분기 후 가지의 길이</li>
+          <li><strong>분기 가지 두께</strong>: 줄기 대비 비율</li>
+          <li><strong>비대칭</strong>: 한쪽이 더 크거나 긴 변이</li>
+        </ul>
+
+        <h2>줄기-분기 연결</h2>
+        <p>분기점에서 줄기 두께가 자연스럽게 두 가지로 나뉘어야 합니다.
+           줄기 단면적 ≈ 분기 가지들의 단면적 합 (파이프 모델).</p>
+
+        <h2>조절 가이드</h2>
+        <ul>
+          <li><strong>분기 높이 낮게</strong>: 키 작고 넓게 퍼진 나무 (참나무)</li>
+          <li><strong>분기 높이 높게</strong>: 키 크고 좁은 나무 (소나무)</li>
+          <li><strong>벌어짐 크게</strong>: 수관이 넓은 나무</li>
+          <li><strong>비대칭 높게</strong>: 자연스러운 불규칙함</li>
+        </ul>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>분기 구현 핵심</h2>
+
+        <div class="code-section">
+          <h3>파이프 모델 (두께 보존)</h3>
+<pre><code>// 줄기 단면적 = 분기 가지들의 단면적 합
+// A_trunk = A_branch1 + A_branch2
+// π r² = π r1² + π r2²
+// r_branch = r_trunk / sqrt(N)
+const branchRadius = trunkRadius / Math.sqrt(forkCount)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>분기 방향</h3>
+<pre><code>// 분기점에서 줄기 접선 기준으로 벌어짐
+const forkDir = trunkTangent.clone()
+  .applyAxisAngle(spreadAxis, spreadAngle)
+  .applyAxisAngle(trunkTangent, azimuth)</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./trunk-fork.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>
