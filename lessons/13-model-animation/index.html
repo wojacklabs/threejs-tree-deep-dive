@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>13 - 모델 애니메이션 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+      flex-wrap: wrap;
+      max-width: calc(100% - 24px);
+    }
+    .controls-bar button {
+      padding: 5px 12px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 11px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .controls-bar button:hover { background: #21262d; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .clip-list {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 10;
+    }
+    .clip-btn {
+      display: flex;
+      flex-direction: column;
+      padding: 8px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.15s;
+    }
+    .clip-btn:hover { background: #21262d; border-color: #58a6ff; }
+    .clip-btn.active { background: #1a3050; border-color: #58a6ff; }
+    .clip-name { font-family: 'Fira Code', monospace; font-size: 13px; font-weight: 600; }
+    .clip-meta { font-family: 'Fira Code', monospace; font-size: 10px; color: #8b949e; margin-top: 2px; }
+    .progress-overlay {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      font-family: 'Fira Code', monospace;
+      font-size: 13px;
+      color: #8b949e;
+      z-index: 20;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/12-gltf/">← 이전</a>
+    <h1>13. 모델 애니메이션</h1>
+    <a href="/lessons/14-particles/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="anim-info"></div>
+      <div class="clip-list" id="clip-list"></div>
+      <div class="progress-overlay" id="progress">Loading...</div>
+      <div class="controls-bar">
+        <button id="btn-pause">Pause</button>
+        <button id="btn-speed-down">Speed -</button>
+        <span id="speed-display" style="color:#8b949e;font-family:'Fira Code',monospace;font-size:11px;line-height:28px">1x</span>
+        <button id="btn-speed-up">Speed +</button>
+        <button id="btn-loop">Loop: Repeat</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>Three.js 애니메이션 시스템</h2>
+        <p>GLTF 모델에 포함된 애니메이션(걷기, 뛰기, 대기 등)을 재생하는 시스템입니다.
+           3가지 핵심 클래스로 구성됩니다:</p>
+        <div class="diagram">
+<pre>
+  AnimationClip     → 애니메이션 데이터 (키프레임)
+       │
+  AnimationAction   → 재생 제어 (play, pause, 속도, 무게)
+       │
+  AnimationMixer    → 여러 Action을 관리, delta로 업데이트
+</pre>
+        </div>
+
+        <h2>AnimationMixer</h2>
+        <p>특정 오브젝트에 대한 <strong>애니메이션 재생기</strong>입니다.
+           모든 애니메이션 Action을 관리하고, 매 프레임 업데이트합니다:</p>
+<pre><code>// 모델에 대한 mixer 생성
+const mixer = new THREE.AnimationMixer(model)
+
+// 매 프레임 업데이트 (animate 내부)
+mixer.update(delta)  // delta = clock.getDelta()</code></pre>
+
+        <div class="note">
+          <code>mixer.update(delta)</code>를 호출하지 않으면
+          애니메이션이 재생되지 않습니다. Lesson 03의 렌더 루프에서
+          <code>controls.update()</code>와 같은 패턴입니다.
+        </div>
+
+        <h2>AnimationClip과 AnimationAction</h2>
+        <p><strong>Clip</strong>은 데이터, <strong>Action</strong>은 재생 제어입니다:</p>
+<pre><code>// gltf.animations = AnimationClip[]
+// 각 clip을 action으로 변환
+const clip = gltf.animations[0]  // "Idle" 등
+const action = mixer.clipAction(clip)
+
+// 재생
+action.play()
+
+// 정지
+action.stop()
+
+// 일시정지
+action.paused = true</code></pre>
+        <p>캔버스 오른쪽 상단의 버튼으로 각 애니메이션 클립을 전환해보세요.</p>
+
+        <h2>크로스페이드 (부드러운 전환)</h2>
+        <p>애니메이션을 갑자기 전환하면 부자연스럽습니다.
+           <code>fadeIn</code>/<code>fadeOut</code>으로 <strong>부드러운 블렌딩</strong>을 합니다:</p>
+<pre><code>function fadeToAction(name, fadeDuration) {
+  previousAction = activeAction
+  activeAction = actions.get(name)
+
+  // 이전 애니메이션 서서히 끄기
+  previousAction.fadeOut(fadeDuration)
+
+  // 새 애니메이션 서서히 켜기
+  activeAction
+    .reset()             // 처음부터
+    .setEffectiveWeight(1) // 최대 무게
+    .fadeIn(fadeDuration)  // 서서히 블렌딩
+    .play()
+}</code></pre>
+        <div class="diagram">
+<pre>
+  fadeOut(0.5):  ████████░░░░  (0.5초에 걸쳐 무게 1→0)
+  fadeIn(0.5):   ░░░░████████  (0.5초에 걸쳐 무게 0→1)
+                 ────────────
+                 전환 구간 (0.5초)
+                 두 애니메이션이 동시에 블렌딩됨
+</pre>
+        </div>
+        <p>캔버스에서 다른 애니메이션 버튼을 클릭할 때 부드럽게 전환되는 것을 확인하세요.</p>
+
+        <h2>Action 속성</h2>
+<pre><code>action.timeScale = 2      // 2배속
+action.timeScale = 0.5    // 0.5배속
+action.timeScale = -1     // 역재생
+
+action.weight = 1         // 최대 영향 (기본)
+action.weight = 0.5       // 절반 블렌딩
+
+action.loop = THREE.LoopRepeat    // 무한 반복 (기본)
+action.loop = THREE.LoopOnce      // 1회만
+action.loop = THREE.LoopPingPong  // 왕복
+
+action.clampWhenFinished = true
+// LoopOnce일 때 마지막 프레임에서 멈춤 (false면 초기 포즈로 돌아감)</code></pre>
+        <p>캔버스 하단 버튼으로 속도와 루프 모드를 변경해보세요.</p>
+
+        <h2>weight (무게) — 애니메이션 블렌딩</h2>
+        <p>여러 애니메이션을 동시에 재생하면서 <code>weight</code>로 비율을 조절할 수 있습니다:</p>
+<pre><code>// 걷기 50% + 뛰기 50% = 빠르게 걷는 느낌
+walkAction.weight = 0.5
+runAction.weight = 0.5
+
+// 걷기 100% + 손 흔들기 100% (상체만 영향)
+// → 다른 부위에 영향하는 애니메이션이면 동시 재생 가능</code></pre>
+
+        <h2>스켈레탈 애니메이션의 원리</h2>
+        <p>GLTF 모델의 캐릭터 애니메이션은 <strong>본(Bone)</strong> 기반입니다:</p>
+        <div class="diagram">
+<pre>
+  SkinnedMesh (겉 표면)
+       │
+  Skeleton
+  ├── spine (척추)
+  │   ├── chest (가슴)
+  │   │   ├── head (머리)
+  │   │   ├── leftArm
+  │   │   │   └── leftForeArm
+  │   │   └── rightArm
+  │   │       └── rightForeArm
+  │   └── hips (엉덩이)
+  │       ├── leftUpLeg
+  │       │   └── leftLeg → leftFoot
+  │       └── rightUpLeg
+  │           └── rightLeg → rightFoot
+
+  AnimationClip의 각 track이 특정 bone의
+  position/rotation/scale을 시간에 따라 변경
+</pre>
+        </div>
+        <p>Lesson 10의 씬 그래프와 같은 계층 구조입니다.
+           부모 bone이 회전하면 자식 bone도 따라 움직입니다.</p>
+
+        <h2>AnimationClip의 내부</h2>
+<pre><code>clip.name       // "Walk", "Run" 등
+clip.duration   // 전체 길이 (초)
+clip.tracks     // KeyframeTrack[] — 각 bone의 키프레임
+
+// track 예시:
+// "spine.quaternion" → 척추 bone의 회전
+// "leftLeg.position" → 왼쪽 다리 bone의 위치
+// 각 track에 시간별 keyframe 값이 저장됨</code></pre>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: AnimationMixer 생성</h3>
+<pre><code>loader.load('/models/Soldier.glb', (gltf) => {
+  const model = gltf.scene
+  scene.add(model)
+
+  // mixer는 모델에 연결
+  const mixer = new THREE.AnimationMixer(model)
+
+  // 모든 clip을 action으로 등록
+  const actions = new Map()
+  gltf.animations.forEach((clip) => {
+    actions.set(clip.name, mixer.clipAction(clip))
+  })
+
+  // 첫 애니메이션 재생
+  actions.get('Idle')?.play()
+})</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 렌더 루프에서 업데이트</h3>
+<pre><code>const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const delta = clock.getDelta()
+
+  // mixer가 있으면 업데이트 (핵심!)
+  if (mixer) mixer.update(delta)
+
+  renderer.render(scene, camera)
+}
+animate()</code></pre>
+          <p><code>getDelta()</code>를 사용하는 이유: 프레임 간 실제 경과 시간을 전달해야
+             프레임 속도와 무관하게 일정한 애니메이션 속도가 보장됩니다.</p>
+          <p>이 레슨에서는 <code>getElapsedTime()</code>을 사용하지 않으므로
+             <code>getDelta()</code>와 혼용 문제가 없습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 크로스페이드 전환</h3>
+<pre><code>function fadeToAction(name: string, fadeDuration: number) {
+  const action = actions.get(name)
+  if (!action) return
+
+  previousAction = activeAction
+  activeAction = action
+
+  // 이전 action fadeOut
+  if (previousAction && previousAction !== activeAction) {
+    previousAction.fadeOut(fadeDuration)
+  }
+
+  // 새 action fadeIn
+  activeAction
+    .reset()                          // 처음부터
+    .setEffectiveTimeScale(timeScale) // 속도
+    .setEffectiveWeight(1)            // 최대 무게
+    .fadeIn(fadeDuration)             // 블렌딩
+    .play()                           // 재생
+}</code></pre>
+          <p><code>.reset()</code>은 action을 초기 상태로 되돌립니다.
+             이전에 재생이 끝난 action을 다시 시작할 때 필요합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 속도 제어</h3>
+<pre><code>// 속도 변경
+action.setEffectiveTimeScale(2)    // 2배속
+action.setEffectiveTimeScale(0.5)  // 0.5배속
+
+// 일시정지/재개
+action.paused = true   // 일시정지
+action.paused = false  // 재개</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 루프 모드</h3>
+<pre><code>// 무한 반복 (기본)
+action.loop = THREE.LoopRepeat
+
+// 1회만 재생
+action.loop = THREE.LoopOnce
+action.clampWhenFinished = true
+// clampWhenFinished: 마지막 포즈에서 멈춤
+
+// 왕복 재생
+action.loop = THREE.LoopPingPong
+
+action.reset().play()  // 변경 후 재시작</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 현재 상태 읽기</h3>
+<pre><code>// 현재 재생 시간
+action.time  // 초 단위
+
+// 클립 정보
+action.getClip().name      // 클립 이름
+action.getClip().duration  // 전체 길이
+
+// 현재 유효 무게 (fadeIn/Out 고려)
+action.getEffectiveWeight()
+
+// 현재 유효 속도
+action.getEffectiveTimeScale()</code></pre>
+          <p>캔버스 왼쪽 상단 info bar에 이 값들이 실시간으로 표시됩니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

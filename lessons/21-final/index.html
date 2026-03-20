@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>21 - 종합 프로젝트 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    body { overflow: hidden; }
+    .lesson-layout { height: calc(100vh - 48px); }
+
+    /* 캔버스: 전체 화면 고정 */
+    .canvas-panel {
+      position: fixed !important;
+      inset: 48px 50% 0 0;
+      z-index: 1;
+    }
+    .canvas-panel canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* 스크롤 컨테이너: 캔버스 위에 겹침 */
+    .scroll-overlay {
+      position: fixed;
+      top: 48px;
+      left: 0;
+      width: 50%;
+      height: calc(100vh - 48px);
+      overflow-y: auto;
+      z-index: 5;
+      pointer-events: auto;
+    }
+
+    .scroll-section {
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+    }
+
+    .section-card {
+      background: rgba(13, 17, 23, 0.75);
+      backdrop-filter: blur(12px);
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 400px;
+      pointer-events: auto;
+    }
+
+    .section-card h2 {
+      font-size: 24px;
+      color: #e6edf3;
+      margin: 0 0 12px;
+      font-family: 'Noto Sans KR', sans-serif;
+    }
+
+    .section-card p {
+      font-size: 14px;
+      color: #8b949e;
+      line-height: 1.7;
+      margin: 0;
+      font-family: 'Noto Sans KR', sans-serif;
+    }
+
+    .section-card .tag {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-family: 'Fira Code', monospace;
+      margin: 12px 4px 0 0;
+    }
+    .tag-blue { background: #1a3050; color: #58a6ff; border: 1px solid #1f4a7a; }
+    .tag-green { background: #1a3020; color: #7ee787; border: 1px solid #1f5a2a; }
+    .tag-purple { background: #2a1a40; color: #d2a8ff; border: 1px solid #3a2a5a; }
+    .tag-orange { background: #3a2a1a; color: #ffaa44; border: 1px solid #5a3a2a; }
+
+    /* 네비게이션 도트 */
+    .nav-dots {
+      position: fixed;
+      left: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .nav-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #30363d;
+      border: none;
+      cursor: pointer;
+      transition: all 0.3s;
+      padding: 0;
+    }
+    .nav-dot.active { background: #58a6ff; transform: scale(1.4); }
+    .nav-dot:hover { background: #58a6ff; }
+
+    /* 탭 패널 */
+    .tab-panel {
+      position: fixed !important;
+      top: 48px;
+      right: 0;
+      width: 50%;
+      height: calc(100vh - 48px);
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/20-scene-management/">← 이전</a>
+    <h1>21. 종합 프로젝트</h1>
+    <a href="/">목록 →</a>
+  </header>
+
+  <!-- 3D 캔버스 (고정) -->
+  <div class="canvas-panel">
+    <canvas id="c"></canvas>
+  </div>
+
+  <!-- HTML 스크롤 오버레이 (캔버스 위에 겹침) -->
+  <div class="scroll-overlay" id="scroll-container">
+    <div class="scroll-section">
+      <div class="section-card">
+        <h2>Three.js 학습 완료</h2>
+        <p>21개 레슨을 통해 기초부터 고급까지 배웠습니다.
+           스크롤하면서 각 주제의 3D 데모를 확인하세요.</p>
+        <span class="tag tag-blue">Scene</span>
+        <span class="tag tag-blue">Camera</span>
+        <span class="tag tag-blue">Renderer</span>
+        <span class="tag tag-green">Scroll Animation</span>
+      </div>
+    </div>
+
+    <div class="scroll-section">
+      <div class="section-card">
+        <h2>파티클 시스템</h2>
+        <p>수천 개의 Points로 구성된 파티클 구체입니다.
+           BufferGeometry에 직접 좌표를 넣어 생성했습니다.</p>
+        <span class="tag tag-purple">Points</span>
+        <span class="tag tag-purple">BufferGeometry</span>
+        <span class="tag tag-purple">AdditiveBlending</span>
+      </div>
+    </div>
+
+    <div class="scroll-section">
+      <div class="section-card">
+        <h2>GLTF 모델</h2>
+        <p>GLTFLoader로 외부 3D 모델을 로드했습니다.
+           PBR Material과 그림자가 적용되어 있습니다.</p>
+        <span class="tag tag-green">GLTFLoader</span>
+        <span class="tag tag-green">PBR</span>
+        <span class="tag tag-green">Shadow</span>
+      </div>
+    </div>
+
+    <div class="scroll-section">
+      <div class="section-card">
+        <h2>커스텀 셰이더</h2>
+        <p>GLSL로 작성한 vertex displacement + fresnel 효과입니다.
+           uniform으로 시간을 전달하여 실시간 애니메이션됩니다.</p>
+        <span class="tag tag-orange">ShaderMaterial</span>
+        <span class="tag tag-orange">GLSL</span>
+        <span class="tag tag-orange">Fresnel</span>
+      </div>
+    </div>
+
+    <div class="scroll-section">
+      <div class="section-card">
+        <h2>모든 것의 조합</h2>
+        <p>Geometry, Material, Light, Animation, Post-processing —
+           지금까지 배운 모든 기술이 하나의 페이지에서 동작합니다.</p>
+        <span class="tag tag-blue">Bloom</span>
+        <span class="tag tag-purple">Parallax</span>
+        <span class="tag tag-green">HTML + WebGL</span>
+        <span class="tag tag-orange">Scroll</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 네비게이션 도트 -->
+  <nav class="nav-dots">
+    <button class="nav-dot active" onclick="document.getElementById('scroll-container').scrollTo({top:0,behavior:'smooth'})"></button>
+    <button class="nav-dot" onclick="document.getElementById('scroll-container').scrollTo({top:innerHeight,behavior:'smooth'})"></button>
+    <button class="nav-dot" onclick="document.getElementById('scroll-container').scrollTo({top:innerHeight*2,behavior:'smooth'})"></button>
+    <button class="nav-dot" onclick="document.getElementById('scroll-container').scrollTo({top:innerHeight*3,behavior:'smooth'})"></button>
+    <button class="nav-dot" onclick="document.getElementById('scroll-container').scrollTo({top:innerHeight*4,behavior:'smooth'})"></button>
+  </nav>
+
+  <!-- 탭 패널 (오른쪽) -->
+  <div class="tab-panel">
+    <nav class="tab-buttons">
+      <button class="tab-btn active" data-tab="concept">개념</button>
+      <button class="tab-btn" data-tab="code">코드</button>
+    </nav>
+
+    <div class="tab-content active" id="tab-concept">
+      <h2>종합 프로젝트</h2>
+      <p>이 레슨은 21개 레슨에서 배운 기술을 <strong>하나의 인터랙티브 페이지</strong>로 통합합니다.</p>
+
+      <h2>사용된 기술</h2>
+      <div class="diagram">
+<pre>
+  레슨    기술                  이 페이지에서의 활용
+  ─────────────────────────────────────────────
+  01-05  Scene, Camera, 기초    렌더링 파이프라인
+  03     Animation, sin()       오브젝트 떠다니기
+  06-07  Light, Shadow          조명 + 그림자
+  08     Texture                GLTF 모델 텍스처
+  09     Environment Map        금속 반사
+  12     GLTF Loading           DamagedHelmet 모델
+  14     Particles              파티클 구체
+  15     Post-processing        Bloom 효과
+  16     Shaders                커스텀 구체
+  NEW    Scroll Animation       스크롤 기반 카메라 이동
+  NEW    HTML + WebGL 혼합       투명 캔버스 + HTML 카드
+  NEW    Mouse Parallax         마우스 위치 → 카메라 이동
+</pre>
+      </div>
+
+      <h2>Scroll 애니메이션</h2>
+      <p>스크롤 위치에 따라 <strong>카메라 Y를 이동</strong>하여
+         각 섹션의 3D 오브젝트가 순서대로 보이게 합니다:</p>
+<pre><code>scrollContainer.addEventListener('scroll', () => {
+  scrollY = scrollContainer.scrollTop
+})
+
+// animate 내부:
+const targetY = -(scrollY / window.innerHeight) * 8
+camera.position.y = THREE.MathUtils.lerp(
+  camera.position.y,
+  targetY + 2,
+  0.05  // 부드러운 보간
+)</code></pre>
+      <p><code>MathUtils.lerp</code>로 보간하면 스크롤이 부드럽게 따라갑니다.
+         0.05는 보간 속도 — 낮을수록 더 부드럽고 느림.</p>
+
+      <h2>HTML + WebGL 혼합</h2>
+      <p>캔버스를 <strong>투명 배경</strong>으로 설정하고,
+         HTML 요소를 위에 겹쳐 놓는 방식입니다:</p>
+<pre><code>// 투명 캔버스
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: true,        // ← 핵심!
+})
+renderer.setClearColor(0x000000, 0)
+// 두 번째 인자 0 = 완전 투명</code></pre>
+      <div class="diagram">
+<pre>
+  레이어 구조:
+
+  ┌──────────────────────┐
+  │  HTML 카드 (z-index 높음)│  pointer-events: auto
+  ├──────────────────────┤
+  │  3D Canvas (중간)     │  alpha: true
+  ├──────────────────────┤
+  │  배경 CSS (낮음)      │  background gradient
+  └──────────────────────┘
+</pre>
+      </div>
+      <p><code>pointer-events</code>를 적절히 설정하여
+         HTML 카드는 클릭 가능하고, 빈 영역은 3D 조작이 가능하게 합니다.</p>
+
+      <h2>Mouse Parallax</h2>
+      <p>마우스 위치에 따라 카메라가 미세하게 움직여 <strong>깊이감</strong>을 줍니다:</p>
+<pre><code>window.addEventListener('mousemove', (e) => {
+  mouseX = (e.clientX / window.innerWidth - 0.5) * 2
+  mouseY = (e.clientY / window.innerHeight - 0.5) * 2
+})
+
+// animate:
+camera.position.x = THREE.MathUtils.lerp(
+  camera.position.x,
+  mouseX * 0.5,
+  0.05
+)</code></pre>
+
+      <h2>실무 활용</h2>
+      <div class="diagram">
+<pre>
+  이 패턴으로 만들 수 있는 것:
+  ─────────────────────────────
+  포트폴리오 웹사이트     스크롤 + 3D 배경
+  제품 랜딩 페이지        스크롤 → 제품 회전/분해
+  인터랙티브 스토리텔링    스크롤 → 장면 전환
+  데이터 시각화 대시보드   HTML UI + 3D 차트
+  회사 소개 페이지        3D 로고 + 텍스트 오버레이
+</pre>
+      </div>
+
+      <h2>커리큘럼 완료!</h2>
+      <p>21개 레슨을 모두 마쳤습니다. 배운 것들:</p>
+      <ul>
+        <li><strong>Phase 1</strong> — Scene, Geometry, Animation, Camera, Controls</li>
+        <li><strong>Phase 2</strong> — Light, Shadow, Texture, Environment Map</li>
+        <li><strong>Phase 3</strong> — Scene Graph, Raycasting, GLTF, Model Animation</li>
+        <li><strong>Phase 4</strong> — Particles, Post-processing, Shaders, Performance</li>
+        <li><strong>Phase 5</strong> — Physics, Procedural, Scene Management, 종합</li>
+      </ul>
+      <p>이제 자신만의 프로젝트를 만들어보세요!</p>
+    </div>
+
+    <div class="tab-content" id="tab-code">
+      <h2>핵심 코드</h2>
+
+      <div class="code-section">
+        <h3>투명 캔버스 + HTML 혼합</h3>
+<pre><code>// renderer: 투명 배경
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  alpha: true,  // 투명 허용
+})
+renderer.setClearColor(0x000000, 0)  // 완전 투명
+
+// CSS: 캔버스 고정, HTML 위에 겹침
+.canvas-panel { position: fixed; z-index: 1; }
+.scroll-overlay { position: fixed; z-index: 5; }
+// HTML이 캔버스 위에서 스크롤</code></pre>
+      </div>
+
+      <div class="code-section">
+        <h3>스크롤 → 카메라 이동</h3>
+<pre><code>const scrollContainer = document.getElementById('scroll')
+let scrollY = 0
+
+scrollContainer.addEventListener('scroll', () => {
+  scrollY = scrollContainer.scrollTop
+})
+
+function animate() {
+  // 스크롤 비율 → 카메라 Y
+  const targetY = -(scrollY / innerHeight) * 8
+  camera.position.y = THREE.MathUtils.lerp(
+    camera.position.y, targetY + 2, 0.05
+  )
+}</code></pre>
+        <p>각 섹션의 3D 오브젝트는 Y축으로 8유닛 간격으로 배치.
+           스크롤 1 섹션 = 카메라 Y -8 이동.</p>
+      </div>
+
+      <div class="code-section">
+        <h3>마우스 패럴랙스</h3>
+<pre><code>let mouseX = 0, mouseY = 0
+window.addEventListener('mousemove', (e) => {
+  mouseX = (e.clientX / innerWidth - 0.5) * 2
+  mouseY = (e.clientY / innerHeight - 0.5) * 2
+})
+
+// animate:
+camera.position.x = lerp(cam.x, mouseX * 0.5, 0.05)
+camera.rotation.x = lerp(cam.rx, -mouseY * 0.05, 0.05)</code></pre>
+      </div>
+
+      <div class="code-section">
+        <h3>네비게이션 도트</h3>
+<pre><code>&lt;nav class="nav-dots"&gt;
+  &lt;button class="nav-dot active"
+    onclick="container.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    })"&gt;
+  &lt;/button&gt;
+  &lt;!-- 각 섹션별 버튼 --&gt;
+&lt;/nav&gt;
+
+// 스크롤 시 활성 도트 업데이트
+const section = Math.round(scrollY / innerHeight)
+dots.forEach((dot, i) =>
+  dot.classList.toggle('active', i === section)
+)</code></pre>
+      </div>
+
+      <div class="code-section">
+        <h3>섹션별 3D 오브젝트 배치</h3>
+<pre><code>// 섹션 0 (Y=0): TorusKnot + Bloom
+heroKnot.position.set(2, 0, 0)
+
+// 섹션 1 (Y=-8): 파티클 구체
+particles.position.set(-2, -8, 0)
+
+// 섹션 2 (Y=-16): GLTF 모델
+modelGroup.position.set(2, -16, 0)
+
+// 섹션 3 (Y=-24): 셰이더 구체
+shaderSphere.position.set(-1.5, -24, 0)
+
+// 섹션 4 (Y=-32): 여러 도형
+shapesGroup.position.set(0, -32, 0)
+
+// 카메라 Y = -(scrollSection) * 8
+// → 스크롤하면 순서대로 보임</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

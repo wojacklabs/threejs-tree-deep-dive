@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>16 - 셰이더 입문 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/15-postprocessing/">← 이전</a>
+    <h1>16. 셰이더 입문</h1>
+    <a href="/lessons/17-performance/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>셰이더란?</h2>
+        <p><strong>GPU에서 실행되는 프로그램</strong>입니다.
+           지금까지 사용한 Material(Standard, Phong 등)은 내부적으로 모두 셰이더입니다.
+           직접 작성하면 <strong>어떤 시각 효과든</strong> 구현할 수 있습니다.</p>
+        <div class="diagram">
+<pre>
+  렌더링 파이프라인:
+
+  JavaScript (CPU)
+       │
+       ▼
+  Vertex Shader (GPU)   ← 정점 위치 결정
+       │
+       ▼
+  Rasterization         ← 삼각형 → 픽셀 변환 (자동)
+       │
+       ▼
+  Fragment Shader (GPU) ← 각 픽셀 색상 결정
+       │
+       ▼
+  화면
+</pre>
+        </div>
+
+        <h2>GLSL</h2>
+        <p>셰이더는 <strong>GLSL(OpenGL Shading Language)</strong>로 작성합니다.
+           C와 비슷한 문법의 별도 언어입니다:</p>
+<pre><code>// GLSL 기본 타입
+float a = 1.0;           // 소수점 필수!
+vec2  b = vec2(1.0, 2.0);
+vec3  c = vec3(1.0, 0.0, 0.5);  // RGB에 딱 맞음
+vec4  d = vec4(1.0, 0.0, 0.5, 1.0);  // RGBA
+mat4  m;  // 4x4 행렬
+
+// 내장 함수
+sin(), cos(), pow(), mix(), clamp(),
+step(), smoothstep(), fract(), length(),
+normalize(), dot(), cross()</code></pre>
+
+        <div class="note">
+          GLSL에서 <code>1</code>은 정수, <code>1.0</code>은 float입니다.
+          float에 정수를 넣으면 컴파일 에러가 납니다.
+          항상 <code>1.0</code>처럼 소수점을 붙이세요.
+        </div>
+
+        <h2>Vertex Shader — 위치 결정</h2>
+        <p><strong>각 정점(vertex)마다</strong> 한 번 실행됩니다.
+           최종 화면 좌표를 <code>gl_Position</code>에 저장합니다:</p>
+<pre><code>void main() {
+  gl_Position = projectionMatrix  // 원근 투영
+              * modelViewMatrix   // 모델+카메라 변환
+              * vec4(position, 1.0);  // 정점 좌표
+}</code></pre>
+        <p>캔버스의 <em>파도</em> 데모가 vertex shader에서 <code>position.y</code>를
+           sin으로 변형하여 물결을 만듭니다.</p>
+
+        <h2>Fragment Shader — 색상 결정</h2>
+        <p><strong>각 픽셀(fragment)마다</strong> 한 번 실행됩니다.
+           최종 색상을 <code>gl_FragColor</code>에 저장합니다:</p>
+<pre><code>void main() {
+  gl_FragColor = vec4(
+    1.0,   // R (빨강)
+    0.0,   // G (초록)
+    0.5,   // B (파랑)
+    1.0    // A (알파)
+  );
+}</code></pre>
+
+        <h2>데이터 흐름: uniform, attribute, varying</h2>
+        <div class="diagram">
+<pre>
+  JavaScript (CPU)
+       │
+       │ uniform ──→ vertex shader에 전달
+       │             (시간, 마우스, 해상도 등)
+       │
+       │ attribute ─→ vertex shader에 전달
+       │             (position, normal, uv 등 정점별 데이터)
+       │
+  Vertex Shader
+       │
+       │ varying ──→ fragment shader에 전달
+       │             (vertex→fragment 보간된 값)
+       │
+  Fragment Shader
+</pre>
+        </div>
+
+        <p><strong>uniform</strong> — JS에서 셰이더로. 모든 정점/픽셀에서 동일한 값:</p>
+<pre><code>// JS
+material.uniforms.uTime.value = elapsed
+
+// GLSL
+uniform float uTime;  // 모든 픽셀에서 같은 값</code></pre>
+
+        <p><strong>attribute</strong> — 정점별 데이터. Three.js가 자동 제공:</p>
+<pre><code>// GLSL (Three.js가 자동 주입)
+attribute vec3 position;  // 정점 좌표
+attribute vec3 normal;    // 법선
+attribute vec2 uv;        // 텍스처 좌표</code></pre>
+
+        <p><strong>varying</strong> — vertex→fragment 전달. 삼각형 내부에서 자동 보간:</p>
+<pre><code>// vertex shader
+varying vec3 vPosition;
+void main() {
+  vPosition = position;  // vertex에서 설정
+}
+
+// fragment shader
+varying vec3 vPosition;  // 보간된 값 수신
+void main() {
+  gl_FragColor = vec4(vPosition * 0.5 + 0.5, 1.0);
+}</code></pre>
+
+        <h2>ShaderMaterial</h2>
+        <p>Three.js에서 커스텀 셰이더를 사용하는 방법:</p>
+<pre><code>const material = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+    uColor: { value: new THREE.Color(0xff0000) },
+  },
+  vertexShader: `...GLSL...`,
+  fragmentShader: `...GLSL...`,
+  transparent: true,  // 알파 사용 시
+  side: THREE.DoubleSide,  // 양면 렌더링
+  wireframe: false,
+})</code></pre>
+
+        <h2>캔버스 데모</h2>
+        <p>7개의 셰이더 데모를 확인할 수 있습니다:</p>
+        <ul>
+          <li><strong>minimal</strong> — 최소 셰이더, 단색 출력</li>
+          <li><strong>uniform</strong> — uTime으로 색상 애니메이션</li>
+          <li><strong>varying</strong> — 정점 위치를 색상으로 매핑</li>
+          <li><strong>UV 패턴</strong> — UV 좌표로 체커보드 생성</li>
+          <li><strong>vertex displacement</strong> — sin 합성으로 파도 (Lesson 03 응용)</li>
+          <li><strong>fresnel</strong> — 시선 각도에 따른 엣지 발광</li>
+          <li><strong>dissolve</strong> — 노이즈 + discard로 소멸 효과</li>
+        </ul>
+
+        <h2>discard — 픽셀 버리기</h2>
+        <p>fragment shader에서 <code>discard</code>를 호출하면 해당 픽셀을 렌더링하지 않습니다.
+           디졸브, 구멍, 커팅 효과에 사용됩니다:</p>
+<pre><code>if (noise < threshold) discard;
+// threshold 아래의 노이즈 영역은 투명하게 처리</code></pre>
+
+        <h2>Three.js 내장 변수</h2>
+        <p><code>ShaderMaterial</code>은 다음 변수를 자동으로 셰이더에 주입합니다:</p>
+<pre><code>// Vertex Shader에서 사용 가능
+uniform mat4 projectionMatrix;   // 원근 투영
+uniform mat4 modelViewMatrix;    // 모델 + 뷰
+uniform mat4 modelMatrix;        // 모델 변환
+uniform mat4 viewMatrix;         // 카메라 뷰
+uniform mat3 normalMatrix;       // 법선 변환
+uniform vec3 cameraPosition;     // 카메라 월드 위치
+
+attribute vec3 position;  // 정점 좌표
+attribute vec3 normal;    // 법선
+attribute vec2 uv;        // UV 좌표</code></pre>
+
+        <h2>Vertex Shader는 항상 실행된다</h2>
+        <p>셰이더를 "쓸지 말지"가 아닙니다.
+           <code>MeshStandardMaterial</code>을 쓰든 <code>ShaderMaterial</code>을 쓰든
+           vertex shader는 <strong>항상 실행</strong>됩니다:</p>
+        <div class="diagram">
+<pre>
+  MeshStandardMaterial → Three.js가 작성한 vertex shader
+  ShaderMaterial       → 내가 작성한 vertex shader
+
+  "직접 쓸지, Three.js에게 맡길지"의 차이
+</pre>
+        </div>
+        <p>기본 투영(position → 화면 좌표)은 어떤 Material이든 반드시 일어납니다.
+           커스텀 vertex shader는 이 위에 <strong>추가 연산</strong>을 넣는 것이므로,
+           비용은 "얼마나 복잡한 변형을 추가하느냐"에 달려 있습니다.</p>
+
+        <h2>GPU 병렬의 힘 — CPU vs GPU 파티클</h2>
+        <p>Lesson 14의 분수는 CPU에서 파티클을 이동시켰습니다.
+           vertex shader로 옮기면 극적인 성능 향상이 가능합니다:</p>
+        <div class="diagram">
+<pre>
+  CPU 파티클 (Lesson 14):
+  JS에서 10만 개 위치 계산 → Float32Array → GPU 전송
+  병목: CPU 루프 (순차) + CPU→GPU 전송 (매 프레임)
+
+  GPU 파티클 (vertex shader):
+  vertex shader에서 10만 개 동시 계산 → 바로 렌더링
+  병목: 거의 없음 (GPU가 10만 개를 병렬 실행)
+</pre>
+        </div>
+        <p>GPU는 수천 개의 코어가 동시에 vertex shader를 실행합니다.
+           CPU의 순차 for 루프와는 차원이 다른 처리량입니다.</p>
+
+        <h2>다른 셰이더 언어들</h2>
+        <p>GLSL 외에도 다양한 셰이더 언어가 있지만,
+           <strong>웹에서는 GLSL만 알면 됩니다</strong>:</p>
+        <div class="diagram">
+<pre>
+  GLSL   OpenGL/WebGL용   Three.js가 사용 (지금 배우는 것)
+  HLSL   DirectX용        Unity, Unreal이 내부 사용
+  WGSL   WebGPU용         차세대 웹 3D
+  MSL    Metal용          Apple 전용
+  TSL    Three.js 전용    JS로 셰이더 작성 → GLSL/WGSL 자동 변환
+</pre>
+        </div>
+        <p><strong>TSL(Three.js Shading Language)</strong>은 Three.js의 새로운 시스템으로,
+           TypeScript로 셰이더를 작성하면 GLSL(WebGL)과 WGSL(WebGPU)로 자동 변환됩니다.
+           아직 실험적 단계이지만, Three.js가 밀고 있는 미래 방향입니다.
+           GLSL의 원리를 이해하면 TSL이든 다른 언어든 문법만 다를 뿐 같은 개념입니다.</p>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>데모 1: 최소 셰이더</h3>
+<pre><code>const material = new THREE.ShaderMaterial({
+  vertexShader: `
+    void main() {
+      gl_Position = projectionMatrix
+                  * modelViewMatrix
+                  * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    void main() {
+      gl_FragColor = vec4(1.0, 0.0, 0.5, 1.0);
+    }
+  `,
+})</code></pre>
+          <p>가장 기본적인 셰이더. 모든 픽셀이 같은 색(핑크)입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>데모 2: uniform으로 애니메이션</h3>
+<pre><code>// JS에서 매 프레임 전달
+material.uniforms.uTime.value = elapsed
+
+// GLSL fragment shader
+uniform float uTime;
+void main() {
+  float r = sin(uTime) * 0.5 + 0.5;
+  float g = sin(uTime * 1.3 + 1.0) * 0.5 + 0.5;
+  float b = sin(uTime * 1.7 + 2.0) * 0.5 + 0.5;
+  gl_FragColor = vec4(r, g, b, 1.0);
+}</code></pre>
+          <p>각 채널에 다른 주파수의 sin을 적용하여 색이 무한히 변합니다.
+             Lesson 03의 파동 합성과 같은 원리입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>데모 5: 파도 (vertex displacement)</h3>
+<pre><code>// vertex shader
+uniform float uTime;
+uniform float uAmplitude;
+uniform float uFrequency;
+varying float vElevation;
+
+void main() {
+  vec3 pos = position;
+
+  // 여러 sin 합성 (Lesson 03의 파동 합성)
+  float wave = sin(pos.x * uFrequency + uTime) * uAmplitude;
+  wave += sin(pos.z * uFrequency * 0.8 + uTime * 1.3)
+          * uAmplitude * 0.5;
+
+  pos.y += wave;           // 정점 Y를 변형
+  vElevation = wave;       // fragment로 전달
+
+  gl_Position = projectionMatrix
+              * modelViewMatrix
+              * vec4(pos, 1.0);
+}
+
+// fragment shader
+varying float vElevation;
+void main() {
+  float t = vElevation * 2.0 + 0.5;
+  vec3 deep = vec3(0.0, 0.1, 0.4);
+  vec3 shallow = vec3(0.0, 0.8, 1.0);
+  vec3 color = mix(deep, shallow, clamp(t, 0.0, 1.0));
+  gl_FragColor = vec4(color, 1.0);
+}</code></pre>
+          <p><code>PlaneGeometry(6, 6, 64, 64)</code>의 64×64 세그먼트가
+             vertex shader에서 각각 위아래로 움직여 파도가 됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>데모 6: 프레넬 효과</h3>
+<pre><code>// vertex shader
+varying vec3 vNormal;
+varying vec3 vViewDir;
+
+void main() {
+  vec4 worldPos = modelMatrix * vec4(position, 1.0);
+  vNormal = normalize(normalMatrix * normal);
+  vViewDir = normalize(cameraPosition - worldPos.xyz);
+  gl_Position = projectionMatrix * viewMatrix * worldPos;
+}
+
+// fragment shader
+varying vec3 vNormal;
+varying vec3 vViewDir;
+
+void main() {
+  float fresnel = pow(
+    1.0 - dot(vNormal, vViewDir),  // 시선·법선 내적
+    3.0                             // 지수 (높을수록 엣지 좁아짐)
+  );
+  vec3 color = mix(innerColor, edgeColor, fresnel);
+  gl_FragColor = vec4(color, 1.0);
+}</code></pre>
+          <p>Lesson 09에서 설명한 프레넬 효과를 직접 셰이더로 구현한 것입니다.
+             <code>dot(normal, viewDir)</code>이 핵심 — 정면은 1, 측면은 0.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>데모 7: 디졸브 (노이즈 + discard)</h3>
+<pre><code>// 간단한 해시 노이즈
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7)))
+    * 43758.5453);
+}
+
+void main() {
+  float n = noise(vUv * 6.0);
+  float threshold = sin(uTime * 0.5) * 0.5 + 0.5;
+
+  if (n < threshold) discard;  // 픽셀 제거
+
+  // 경계에 밝은 엣지
+  float edge = smoothstep(threshold, threshold + 0.05, n);
+  vec3 color = mix(edgeColor * 3.0, baseColor, edge);
+  gl_FragColor = vec4(color, 1.0);
+}</code></pre>
+          <p><code>discard</code>로 제거된 영역은 완전 투명이 아니라
+             <strong>아예 렌더링되지 않습니다</strong> (깊이 버퍼에도 안 쓰임).
+             경계에 <code>smoothstep</code>으로 밝은 엣지를 넣으면 불타는 느낌이 됩니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

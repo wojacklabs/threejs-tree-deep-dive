@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>01 - Hello Three.js | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/">← 목록</a>
+    <h1>01. Hello Three.js</h1>
+    <a href="/lessons/02-geometry/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <!-- 왼쪽: 3D 캔버스 -->
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+    </div>
+
+    <!-- 오른쪽: 탭 패널 -->
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>Three.js란?</h2>
+        <p>Three.js는 <strong>WebGL</strong>을 쉽게 사용할 수 있게 해주는 JavaScript 3D 라이브러리입니다.
+           WebGL은 브라우저에서 GPU를 직접 사용해 3D 그래픽을 렌더링하는 저수준 API인데,
+           직접 사용하면 삼각형 하나 그리는 데도 수백 줄의 코드가 필요합니다.</p>
+        <p>Three.js는 이 복잡함을 추상화하여, <em>몇 줄의 코드</em>로 3D 장면을 만들 수 있게 해줍니다.</p>
+
+        <h2>최소 구성 3요소</h2>
+        <p>Three.js로 무언가를 화면에 띄우려면 반드시 <strong>3가지</strong>가 필요합니다:</p>
+        <div class="diagram">
+<pre>
+  Scene (장면)        Camera (카메라)      Renderer (렌더러)
+  ┌──────────┐       ┌──────────┐        ┌──────────┐
+  │ 오브젝트를  │       │ 어디서     │        │ 화면에     │
+  │ 담는 컨테이너│       │ 바라볼지   │        │ 그리는 엔진 │
+  └──────────┘       └──────────┘        └──────────┘
+       │                   │                    │
+       └───────────────────┴────────────────────┘
+                           │
+                    renderer.render(scene, camera)
+</pre>
+        </div>
+
+        <h2>Scene (장면)</h2>
+        <p><code>THREE.Scene</code>은 3D 세계의 <strong>컨테이너</strong>입니다.
+           모든 오브젝트, 조명, 카메라를 이 안에 추가(<code>scene.add()</code>)해야 렌더링됩니다.</p>
+
+        <h2>Camera (카메라)</h2>
+        <p><code>PerspectiveCamera</code>는 사람의 눈과 비슷한 <strong>원근 투영</strong> 카메라입니다.</p>
+        <p>4개의 파라미터를 받습니다:</p>
+        <ul>
+          <li><strong>fov</strong> (Field of View) — 시야각. 75도가 일반적</li>
+          <li><strong>aspect</strong> — 종횡비 (가로/세로). 보통 캔버스 크기에 맞춤</li>
+          <li><strong>near</strong> — 이것보다 가까운 건 안 보임 (0.1)</li>
+          <li><strong>far</strong> — 이것보다 먼 건 안 보임 (1000)</li>
+        </ul>
+        <div class="diagram">
+<pre>
+     near        far
+      │           │
+      │  ╱────────╲
+  카메라 ╱  보이는 영역  ╲
+      │╲  (frustum)  ╱│
+      │  ╲────────╱  │
+      │           │
+    0.1         1000
+</pre>
+        </div>
+
+        <div class="note">
+          <strong>near/far와 성능:</strong> 이 범위 밖에 있는 오브젝트는 렌더링되지 않습니다.
+          Three.js는 매 프레임마다 <em>frustum culling</em>을 수행하여,
+          카메라 시야(frustum) 밖의 오브젝트를 GPU에 보내지 않고 건너뜁니다.
+          따라서 <code>far</code>를 필요 이상으로 크게 잡으면 불필요한 렌더링이 발생합니다.
+          또한 <code>near</code>와 <code>far</code>의 비율이 너무 크면(예: 0.001 ~ 100000)
+          <em>z-fighting</em> — 겹친 면이 깜빡이는 현상 — 이 발생할 수 있으므로,
+          필요한 범위만큼만 설정하는 것이 원칙입니다.
+        </div>
+
+        <h2>Renderer (렌더러)</h2>
+        <p><code>WebGLRenderer</code>는 Scene과 Camera의 정보를 바탕으로
+           실제로 <strong>픽셀을 그리는 엔진</strong>입니다.</p>
+        <p>HTML <code>&lt;canvas&gt;</code> 요소에 연결하여 그 위에 렌더링합니다.</p>
+
+        <h2>Mesh = Geometry + Material</h2>
+        <p>화면에 보이는 물체(Mesh)는 두 가지로 구성됩니다:</p>
+        <ul>
+          <li><strong>Geometry</strong> — 형태 (정육면체, 구, 원뿔 등의 꼭짓점 데이터)</li>
+          <li><strong>Material</strong> — 외관 (색상, 질감, 반사 등)</li>
+        </ul>
+        <div class="diagram">
+<pre>
+  Geometry          Material           Mesh
+  ┌─────┐          ┌─────┐          ┌─────┐
+  │ 형태  │    +     │ 외관  │    =     │ 물체  │
+  │ (꼭짓점)│          │ (색상) │          │       │
+  └─────┘          └─────┘          └─────┘
+BoxGeometry    MeshNormalMaterial     Mesh
+</pre>
+        </div>
+
+        <h2>MeshNormalMaterial</h2>
+        <p>이 레슨에서는 <code>MeshNormalMaterial</code>을 사용합니다.
+           이 재질은 면의 <strong>법선(normal) 방향</strong>에 따라 색상이 자동으로 결정됩니다.</p>
+        <p>조명이 없어도 색이 보이므로 테스트에 적합하고,
+           회전하면 면마다 색이 바뀌어 3D 형태를 쉽게 확인할 수 있습니다.</p>
+
+        <div class="note">
+          왼쪽 캔버스에서 회전하는 정육면체를 확인하세요.
+          각 면의 법선 방향에 따라 빨강/초록/파랑 등의 색이 달라지는 것이 보입니다.
+        </div>
+
+        <h2>렌더 루프</h2>
+        <p><code>requestAnimationFrame</code>은 브라우저가 다음 화면을 그리기 직전에
+           함수를 호출해 달라고 예약하는 API입니다. 이걸 재귀적으로 호출하면
+           <strong>매 프레임마다</strong> 장면을 다시 그려서 애니메이션이 됩니다.</p>
+<pre><code>function animate() {
+  requestAnimationFrame(animate)  // 다음 프레임 예약
+  cube.rotation.y += 0.01         // 상태 변경
+  renderer.render(scene, camera)  // 다시 그리기
+}</code></pre>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+        <p>이 레슨의 Three.js 코드 전문입니다. 각 단계를 주석으로 설명합니다.</p>
+
+        <div class="code-section">
+          <h3>1단계: import와 캔버스 연결</h3>
+<pre><code>import * as THREE from 'three'
+
+// HTML에 미리 만들어둔 &lt;canvas id="c"&gt; 를 가져옵니다
+const canvas = document.getElementById('c') as HTMLCanvasElement</code></pre>
+          <p>Three.js를 통째로 import합니다. <code>THREE</code> 네임스페이스 아래에
+             Scene, Camera, Geometry 등 모든 클래스가 있습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: Renderer 생성</h3>
+<pre><code>const renderer = new THREE.WebGLRenderer({
+  canvas,           // 어느 canvas에 그릴지
+  antialias: true,  // 계단 현상 완화 (안티앨리어싱)
+})</code></pre>
+          <p><code>antialias: true</code>를 주면 3D 물체의 가장자리가 부드러워집니다.
+             약간의 성능 비용이 있지만, 시각적 품질이 크게 향상됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: Scene과 Camera</h3>
+<pre><code>const scene = new THREE.Scene()
+
+const camera = new THREE.PerspectiveCamera(
+  75,   // fov: 시야각 75도
+  1,    // aspect: 일단 1, resize에서 갱신
+  0.1,  // near: 0.1 미만은 안 보임
+  1000  // far: 1000 초과는 안 보임
+)
+camera.position.z = 3  // 카메라를 z축 +3 위치로 이동</code></pre>
+          <p><code>camera.position.z = 3</code>이 핵심입니다.
+             기본적으로 카메라와 오브젝트 모두 원점 (0,0,0)에 생성되므로,
+             카메라를 뒤로 빼야 오브젝트가 보입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: Mesh 생성 (Geometry + Material)</h3>
+<pre><code>const geometry = new THREE.BoxGeometry(1, 1, 1)
+// BoxGeometry(가로, 세로, 깊이) — 1x1x1 정육면체
+
+const material = new THREE.MeshNormalMaterial()
+// 법선 방향에 따라 색이 자동 결정 — 조명 불필요
+
+const cube = new THREE.Mesh(geometry, material)
+scene.add(cube)
+// scene에 추가해야 렌더링됨!</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 리사이즈 대응</h3>
+<pre><code>function resize() {
+  const parent = canvas.parentElement!
+  const w = parent.clientWidth
+  const h = parent.clientHeight
+  renderer.setSize(w, h)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  camera.aspect = w / h
+  camera.updateProjectionMatrix()
+}
+window.addEventListener('resize', resize)
+resize()  // 최초 1회 실행</code></pre>
+          <p>브라우저 창 크기가 바뀔 때마다 renderer와 camera의 크기를 갱신합니다.</p>
+          <p><code>setPixelRatio</code>는 고해상도 디스플레이(Retina)에서
+             선명하게 보이도록 합니다. 2 이상은 성능 낭비이므로 <code>Math.min</code>으로 제한합니다.</p>
+          <p><code>camera.updateProjectionMatrix()</code>를 호출해야
+             변경된 aspect 비율이 실제로 적용됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 렌더 루프 (애니메이션)</h3>
+<pre><code>function animate() {
+  requestAnimationFrame(animate)
+
+  cube.rotation.x += 0.01
+  cube.rotation.y += 0.01
+
+  renderer.render(scene, camera)
+}
+animate()</code></pre>
+          <p><code>requestAnimationFrame</code>은 보통 초당 60회 호출됩니다.</p>
+          <p>매 프레임마다 <code>rotation</code>을 조금씩 더하면 부드러운 회전 애니메이션이 됩니다.</p>
+          <p><code>0.01 라디안 ≈ 0.57도</code>이므로, 360도 회전에 약 10.5초가 걸립니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>04 - 카메라와 좌표계 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/03-animation/">← 이전</a>
+    <h1>04. 카메라와 좌표계</h1>
+    <a href="/lessons/05-controls/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>3D 좌표계</h2>
+        <p>Three.js는 <strong>오른손 좌표계</strong>를 사용합니다:</p>
+        <div class="diagram">
+<pre>
+        +Y (위)
+         │
+         │
+         │
+         ┼───────── +X (오른쪽)
+        ╱
+       ╱
+      +Z (화면 쪽, 카메라를 향해)
+</pre>
+        </div>
+        <ul>
+          <li><strong style="color:#ff4444">X축 (빨강)</strong> — 오른쪽이 양수</li>
+          <li><strong style="color:#44ff44">Y축 (초록)</strong> — 위쪽이 양수</li>
+          <li><strong style="color:#4488ff">Z축 (파랑)</strong> — 화면 쪽(카메라 쪽)이 양수</li>
+        </ul>
+        <p>캔버스에서 <code>AxesHelper</code>의 색상과 각 축 방향에 놓인 큐브를 확인하세요.</p>
+
+        <div class="note">
+          <strong>오른손 법칙:</strong> 오른손 엄지를 X축 양수 방향으로,
+          검지를 Y축 양수 방향으로 향하면,
+          중지가 가리키는 방향이 Z축 양수 방향입니다.
+        </div>
+
+        <h2>AxesHelper와 GridHelper</h2>
+        <p>좌표계를 눈으로 확인하는 데 유용한 헬퍼들입니다:</p>
+<pre><code>// 축 표시 (빨=X, 초=Y, 파=Z), 길이 5
+const axes = new THREE.AxesHelper(5)
+scene.add(axes)
+
+// XZ 평면 격자, 크기 10, 칸 수 10
+const grid = new THREE.GridHelper(10, 10)
+scene.add(grid)</code></pre>
+        <p><code>GridHelper</code>는 기본적으로 <strong>XZ 평면</strong>(바닥)에 생성됩니다.
+           격자 한 칸이 1유닛이므로 거리감을 잡는 기준이 됩니다.</p>
+
+        <h2>PerspectiveCamera 파라미터</h2>
+        <p>Lesson 01에서 간단히 다뤘던 카메라 파라미터를 자세히 살펴봅니다:</p>
+<pre><code>new THREE.PerspectiveCamera(fov, aspect, near, far)</code></pre>
+
+        <p><strong>FOV (Field of View) — 시야각</strong></p>
+        <p>수직 시야각을 도(degree) 단위로 지정합니다:</p>
+        <div class="diagram">
+<pre>
+  fov: 30 (좁은 시야)      fov: 75 (표준)       fov: 120 (넓은 시야)
+  ┌─────┐                ╱─────╲              ╱───────────╲
+  │     │               ╱       ╲            ╱             ╲
+  │     │              ╱  보이는   ╲          ╱    넓은 범위    ╲
+  └─────┘              ╲  영역    ╱          ╲     왜곡 발생   ╱
+                        ╲       ╱            ╲             ╱
+  망원 렌즈 느낌           표준           어안 렌즈 느낌
+  원근감 적음             보통          원근감 과장
+</pre>
+        </div>
+        <p>캔버스에서 3개의 <code>CameraHelper</code>로 FOV 30°, 75°, 120°의 시야 범위 차이를 확인하세요.</p>
+
+        <div class="note">
+          <strong>FOV와 원근감:</strong>
+          FOV가 낮으면(30°) 망원 렌즈처럼 원근감이 줄어들고,
+          FOV가 높으면(120°) 어안 렌즈처럼 원근감이 과장됩니다.
+          게임은 보통 60~90°, 건축 시각화는 40~50°를 사용합니다.
+        </div>
+
+        <p><strong>Aspect Ratio — 종횡비</strong></p>
+        <p><code>canvas.width / canvas.height</code>로 설정합니다.
+           종횡비가 실제 캔버스와 맞지 않으면 이미지가 찌그러집니다.
+           Lesson 01에서 배운 resize 핸들러가 이를 처리합니다.</p>
+
+        <p><strong>Near / Far — 클리핑 평면</strong></p>
+        <p>Lesson 01에서 배운 것처럼, 이 범위 밖의 오브젝트는 렌더링되지 않습니다.
+           일반적인 설정:</p>
+        <ul>
+          <li><code>near: 0.1</code> — 대부분의 경우 충분</li>
+          <li><code>far: 100~1000</code> — 씬 규모에 맞게</li>
+        </ul>
+
+        <h2>camera.position과 lookAt</h2>
+        <p>카메라는 두 가지 속성으로 시점이 결정됩니다:</p>
+        <ul>
+          <li><code>camera.position</code> — 카메라가 <strong>어디에 있는지</strong></li>
+          <li><code>camera.lookAt(target)</code> — 카메라가 <strong>어디를 바라보는지</strong></li>
+        </ul>
+<pre><code>camera.position.set(5, 4, 7)  // 카메라 위치
+camera.lookAt(0, 0, 0)        // 원점을 바라봄
+
+// 또는 Vector3 사용
+camera.lookAt(new THREE.Vector3(2, 1, -2))</code></pre>
+        <div class="diagram">
+<pre>
+  camera.position(0, 1, 4)
+         │
+         │  ← 바라보는 방향
+         ▼
+  lookAt target(2, 1, -2)
+</pre>
+        </div>
+        <p>캔버스에서 노란 화살표가 카메라→타겟 방향을 나타냅니다.</p>
+
+        <div class="note">
+          <code>lookAt</code>을 호출하지 않으면 카메라는 기본적으로
+          <strong>-Z 방향</strong>을 바라봅니다.
+          OrbitControls를 사용하면 controls가 lookAt을 관리하므로
+          직접 호출할 필요가 없습니다.
+        </div>
+
+        <h2>position.set vs position.x/y/z</h2>
+        <p>위치를 설정하는 두 가지 방법:</p>
+<pre><code>// 방법 1: set() — 한 번에 세 축
+camera.position.set(5, 4, 7)
+
+// 방법 2: 개별 설정
+camera.position.x = 5
+camera.position.y = 4
+camera.position.z = 7
+
+// 방법 3: Vector3 복사
+camera.position.copy(someVector3)</code></pre>
+        <p>결과는 동일합니다. <code>set()</code>이 가장 간결합니다.</p>
+
+        <h2>OrthographicCamera (참고)</h2>
+        <p>Three.js에는 또 다른 카메라인 <code>OrthographicCamera</code>가 있습니다.
+           원근감이 <strong>없는</strong> 카메라입니다:</p>
+        <div class="diagram">
+<pre>
+  Perspective (원근 투영)        Orthographic (직교 투영)
+
+     ╱──────╲                    ┌──────┐
+    ╱        ╲                   │      │
+   ╱ 가까운 건 ╲                  │ 모든  │
+   ╲ 크게 보임 ╱                  │ 크기  │
+    ╲        ╱                   │ 동일  │
+     ╲──────╱                    └──────┘
+
+  현실적, 게임/시각화            2D 느낌, 설계도, 전략 게임
+</pre>
+        </div>
+        <p>이 커리큘럼에서는 <code>PerspectiveCamera</code>를 주로 사용합니다.
+           <code>OrthographicCamera</code>는 2D UI 오버레이, 미니맵, 건축 정면도 등에 쓰입니다.</p>
+
+        <h2>CameraHelper</h2>
+        <p>다른 카메라의 frustum(시야 영역)을 시각화합니다:</p>
+<pre><code>const debugCam = new THREE.PerspectiveCamera(75, 1, 0.5, 3)
+debugCam.position.set(-4, 2, -1)
+debugCam.lookAt(0, 0, 0)
+
+const helper = new THREE.CameraHelper(debugCam)
+scene.add(helper)</code></pre>
+        <p>캔버스에서 FOV 30°, 75°, 120° 세 개의 CameraHelper를 비교해보세요.
+           시야각이 넓을수록 frustum이 넓어지는 것이 보입니다.</p>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 카메라와 좌표 헬퍼</h3>
+<pre><code>const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100)
+camera.position.set(5, 4, 7)
+// 약간 위에서, 비스듬히 내려다보는 시점
+
+// AxesHelper: 빨강=X, 초록=Y, 파랑=Z
+const axes = new THREE.AxesHelper(5)
+scene.add(axes)
+
+// GridHelper: XZ 평면의 격자 (바닥)
+const grid = new THREE.GridHelper(10, 10, 0x444444, 0x222222)
+scene.add(grid)</code></pre>
+          <p><code>AxesHelper(5)</code>는 원점에서 각 축 방향으로 5유닛 길이의 선을 그립니다.
+             색상은 고정입니다: <strong style="color:#f44">X=빨</strong>,
+             <strong style="color:#4f4">Y=초</strong>,
+             <strong style="color:#48f">Z=파</strong>.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 축 방향에 오브젝트 배치</h3>
+<pre><code>// X축 양수 방향 → 빨간 큐브
+const boxX = new THREE.Mesh(
+  new THREE.BoxGeometry(0.8, 0.8, 0.8),
+  new THREE.MeshBasicMaterial({ color: 0xff4444 })
+)
+boxX.position.set(3, 0.4, 0)
+scene.add(boxX)
+
+// Y축 양수 방향 → 초록 큐브
+const boxY = new THREE.Mesh(/* ... */)
+boxY.position.set(0, 3, 0)
+
+// Z축 양수 방향 → 파란 큐브
+const boxZ = new THREE.Mesh(/* ... */)
+boxZ.position.set(0, 0.4, 3)</code></pre>
+          <p>각 축 색상과 같은 색의 큐브를 배치하여
+             좌표축 방향을 직관적으로 확인할 수 있습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: FOV 비교 — CameraHelper</h3>
+<pre><code>function createCameraIcon(
+  fov: number,
+  pos: THREE.Vector3,
+  label: string
+) {
+  // 디버그용 카메라 (렌더링에 사용하지 않음)
+  const cam = new THREE.PerspectiveCamera(fov, 1, 0.5, 3)
+  cam.position.copy(pos)
+  cam.lookAt(0, 0, 0)
+
+  // frustum을 선으로 시각화
+  const helper = new THREE.CameraHelper(cam)
+  scene.add(helper)
+
+  createLabel(label, ...)
+  return { cam, helper }
+}
+
+createCameraIcon(30, new THREE.Vector3(-4, 2, -4), 'fov:30')
+createCameraIcon(75, new THREE.Vector3(-4, 2, -1), 'fov:75')
+createCameraIcon(120, new THREE.Vector3(-4, 2, 2), 'fov:120')</code></pre>
+          <p><code>CameraHelper</code>는 카메라 자체를 렌더링하는 것이 아니라,
+             해당 카메라의 <strong>시야 영역(frustum)</strong>을 와이어프레임으로 보여줍니다.
+             디버깅 시 그림자 카메라의 범위 확인 등에도 유용합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: lookAt 시각화</h3>
+<pre><code>// 타겟 오브젝트
+const lookAtTarget = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.2),
+  new THREE.MeshBasicMaterial({ color: 0xffaa00, wireframe: true })
+)
+lookAtTarget.position.set(2, 1, -2)
+scene.add(lookAtTarget)
+
+// 카메라→타겟 방향 화살표
+const arrowDir = new THREE.Vector3()
+arrowDir.subVectors(
+  lookAtTarget.position,        // 끝점
+  new THREE.Vector3(0, 1, 4)    // 시작점 (카메라 위치)
+).normalize()
+
+const arrow = new THREE.ArrowHelper(
+  arrowDir,                      // 방향 (정규화된 벡터)
+  new THREE.Vector3(0, 1, 4),   // 시작점
+  3,                             // 길이
+  0xffaa00,                      // 색상
+  0.3,                           // 화살머리 길이
+  0.15                           // 화살머리 너비
+)
+scene.add(arrow)</code></pre>
+          <p><code>ArrowHelper</code>는 방향 벡터를 시각화하는 헬퍼입니다.
+             디버깅 시 법선 방향, 이동 방향 등을 표시할 때도 유용합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 라벨 (Sprite)</h3>
+<pre><code>function createLabel(
+  text: string,
+  position: THREE.Vector3,
+  color: string = '#ffffff'
+) {
+  const c = document.createElement('canvas')
+  c.width = 128; c.height = 64
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = color
+  ctx.font = 'bold 36px monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText(text, 64, 44)
+
+  const texture = new THREE.CanvasTexture(c)
+  const mat = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+  })
+  const sprite = new THREE.Sprite(mat)
+  sprite.position.copy(position)
+  sprite.scale.set(1.2, 0.6, 1)
+  scene.add(sprite)
+}</code></pre>
+          <p>Lesson 02에서 사용한 라벨 함수와 동일합니다.
+             <code>Sprite</code>는 항상 카메라를 향하므로 (billboard)
+             어떤 각도에서 봐도 텍스트가 읽힙니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

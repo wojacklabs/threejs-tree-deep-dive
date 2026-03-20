@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>11 - Raycasting | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .controls-bar button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .controls-bar button:hover { background: #21262d; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/10-scene-graph/">← 이전</a>
+    <h1>11. Raycasting</h1>
+    <a href="/lessons/12-gltf/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar">
+        <div id="hover-info"><span>hover: none</span></div>
+        <div id="select-info"><span>selected: none</span></div>
+      </div>
+      <div class="controls-bar">
+        <button id="btn-ray">Ray: OFF</button>
+        <button id="btn-reset-colors">Reset</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>Raycasting이란?</h2>
+        <p>3D 공간에서 <strong>보이지 않는 광선(ray)</strong>을 쏘아
+           어떤 오브젝트와 교차하는지 검사하는 기법입니다.</p>
+        <div class="diagram">
+<pre>
+  마우스 클릭
+      │
+      ▼
+   카메라 ─────────── ray ──────────→
+              │             │
+              │   ┌─────┐   │
+              │   │ hit │   │
+              │   └─────┘   │
+              │             │
+              └─────────────┘
+  "이 광선이 어떤 오브젝트와 만나는가?"
+</pre>
+        </div>
+        <p>캔버스에서 오브젝트 위에 마우스를 올려보세요.
+           <strong>Ray</strong> 버튼으로 광선을 시각화할 수 있습니다.</p>
+
+        <h2>핵심 과정 3단계</h2>
+        <p><strong>1. 마우스 좌표를 정규화 (-1 ~ +1)</strong></p>
+<pre><code>const mouse = new THREE.Vector2()
+
+function updateMouse(event: MouseEvent) {
+  const rect = canvas.getBoundingClientRect()
+  // 화면 좌표 → NDC (Normalized Device Coordinates)
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+  //  ↑ y축은 반전 (화면은 아래가 +, NDC는 위가 +)
+}</code></pre>
+        <div class="diagram">
+<pre>
+  화면 좌표:          NDC:
+  (0,0)──→ x         (-1,+1)──→(+1,+1)
+  │                      │
+  ▼ y                    ▼
+  (w,h)              (-1,-1)──→(+1,-1)
+</pre>
+        </div>
+
+        <p><strong>2. 카메라에서 광선 생성</strong></p>
+<pre><code>const raycaster = new THREE.Raycaster()
+raycaster.setFromCamera(mouse, camera)
+// mouse(NDC)와 camera로부터 광선의 origin과 direction을 계산</code></pre>
+
+        <p><strong>3. 교차 검사</strong></p>
+<pre><code>const intersects = raycaster.intersectObjects(meshes)
+
+if (intersects.length > 0) {
+  const hit = intersects[0]  // 가장 가까운 교차
+  hit.object    // 교차한 오브젝트
+  hit.point     // 교차 지점 (Vector3)
+  hit.distance  // 카메라에서의 거리
+  hit.face      // 교차한 면
+  hit.faceIndex // 면 인덱스
+}</code></pre>
+
+        <div class="note">
+          <code>intersectObjects</code>는 <strong>거리순으로 정렬</strong>된 배열을 반환합니다.
+          <code>intersects[0]</code>이 가장 가까운(눈에 보이는) 오브젝트입니다.
+        </div>
+
+        <h2>호버 효과</h2>
+        <p>캔버스에서 오브젝트 위에 마우스를 올리면 색이 밝아집니다:</p>
+<pre><code>canvas.addEventListener('mousemove', (e) => {
+  updateMouse(e)
+
+  const intersects = raycaster.intersectObjects(meshes)
+
+  if (intersects.length > 0) {
+    // 호버 중 — 색 밝게
+    material.color.multiplyScalar(1.4)
+    canvas.style.cursor = 'pointer'
+  } else {
+    // 호버 아님 — 원래 색
+    material.color.copy(originalColor)
+    canvas.style.cursor = 'default'
+  }
+})</code></pre>
+        <p>왼쪽 상단 info bar에서 호버 중인 오브젝트의 이름, 거리, 교차 지점, face 인덱스를 확인하세요.</p>
+
+        <h2>클릭 선택</h2>
+        <p>클릭하면 오브젝트가 선택되어 <strong>emissive(발광)</strong> 효과가 적용되고
+           위아래로 바운스합니다. 같은 오브젝트를 다시 클릭하면 선택 해제됩니다.</p>
+<pre><code>canvas.addEventListener('click', () => {
+  if (hoveredObject) {
+    // emissive로 "선택됨" 표시
+    material.emissive.copy(originalColor)
+    material.emissiveIntensity = 0.4
+  }
+})</code></pre>
+
+        <h2>intersectObjects 옵션</h2>
+<pre><code>// 기본: 직접 전달한 오브젝트만 검사
+raycaster.intersectObjects(meshes)
+
+// recursive: true → 자식까지 검사 (Group, GLTF 모델에 필수)
+raycaster.intersectObjects([group], true)
+
+// 단일 오브젝트
+raycaster.intersectObject(mesh)</code></pre>
+
+        <div class="note">
+          GLTF 모델은 보통 Group 안에 여러 Mesh가 들어있으므로
+          <code>recursive: true</code>를 사용해야 합니다.
+          Lesson 12에서 다룹니다.
+        </div>
+
+        <h2>Raycasting 성능</h2>
+        <p>오브젝트 수가 많으면 교차 검사가 느려질 수 있습니다:</p>
+        <div class="diagram">
+<pre>
+  오브젝트 수    방법
+  ──────────────────────────────────
+  ~100개        intersectObjects 그대로 사용
+  ~1000개       검사 대상을 줄임 (가까운 것만)
+  ~10000개      BVH (Bounding Volume Hierarchy) 사용
+               → three-mesh-bvh 라이브러리
+</pre>
+        </div>
+        <p>내부적으로 Three.js는 각 오브젝트의 <strong>bounding sphere</strong>를 먼저 검사하여
+           명백히 교차하지 않는 것을 빠르게 걸러냅니다.</p>
+
+        <h2>Raycasting 활용</h2>
+        <ul>
+          <li><strong>클릭 선택</strong> — 오브젝트 클릭, UI 인터랙션</li>
+          <li><strong>호버 효과</strong> — 마우스 오버 시 하이라이트, 툴팁</li>
+          <li><strong>바닥 클릭</strong> — 캐릭터 이동, 오브젝트 배치</li>
+          <li><strong>충돌 감지</strong> — 간단한 시선 검사, 장애물 감지</li>
+          <li><strong>높이 맞추기</strong> — 지형 위에 오브젝트 배치 (아래로 ray)</li>
+        </ul>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: Raycaster 생성</h3>
+<pre><code>const raycaster = new THREE.Raycaster()
+const mouse = new THREE.Vector2()
+
+// 마우스 좌표를 NDC로 변환
+function updateMouse(event: MouseEvent) {
+  const rect = canvas.getBoundingClientRect()
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+}</code></pre>
+          <p><code>getBoundingClientRect()</code>를 사용하면 캔버스가 페이지의
+             어디에 있든 정확한 좌표를 계산합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: mousemove — 호버 감지</h3>
+<pre><code>let hoveredObject: InteractiveObject | null = null
+
+canvas.addEventListener('mousemove', (e) => {
+  updateMouse(e)
+
+  // 카메라에서 마우스 방향으로 광선 생성
+  raycaster.setFromCamera(mouse, camera)
+
+  // 인터랙티브 오브젝트들과 교차 검사
+  const meshes = interactives.map(i => i.mesh)
+  const intersects = raycaster.intersectObjects(meshes)
+
+  // 이전 호버 해제
+  if (hoveredObject) {
+    material.color.copy(hoveredObject.originalColor)
+    canvas.style.cursor = 'default'
+    hoveredObject = null
+  }
+
+  // 새 호버
+  if (intersects.length > 0) {
+    const hit = intersects[0]
+    const obj = interactives.find(i => i.mesh === hit.object)
+    if (obj) {
+      hoveredObject = obj
+      material.color.multiplyScalar(1.4)  // 밝게
+      canvas.style.cursor = 'pointer'
+    }
+  }
+})</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: click — 선택/해제</h3>
+<pre><code>let selectedObject: InteractiveObject | null = null
+
+canvas.addEventListener('click', () => {
+  if (hoveredObject) {
+    if (selectedObject === hoveredObject) {
+      // 같은 것 클릭 → 선택 해제
+      material.emissive.setHex(0x000000)
+      selectedObject = null
+    } else {
+      // 새 선택
+      if (selectedObject) {
+        // 이전 선택 해제
+        prevMaterial.emissive.setHex(0x000000)
+      }
+      selectedObject = hoveredObject
+      material.emissive.copy(originalColor)
+      material.emissiveIntensity = 0.4
+    }
+  } else {
+    // 빈 곳 클릭 → 전체 해제
+    if (selectedObject) {
+      material.emissive.setHex(0x000000)
+      selectedObject = null
+    }
+  }
+})</code></pre>
+          <p><code>emissive</code>는 조명과 무관하게 자체적으로 빛나는 색입니다.
+             선택 표시에 <code>color</code>보다 자연스럽습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 교차점 시각화</h3>
+<pre><code>// 교차 지점에 작은 구체 표시
+const hitMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(0.05, 8, 8),
+  new THREE.MeshBasicMaterial({ color: 0xff0000 })
+)
+scene.add(hitMarker)
+
+// raycast 결과에서:
+if (intersects.length > 0) {
+  hitMarker.position.copy(intersects[0].point)
+  hitMarker.visible = true
+} else {
+  hitMarker.visible = false
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 레이 시각화</h3>
+<pre><code>// 광선을 Line으로 시각화 (디버깅용)
+const origin = raycaster.ray.origin.clone()
+const end = origin.clone().add(
+  raycaster.ray.direction.clone().multiplyScalar(20)
+)
+const geo = new THREE.BufferGeometry()
+  .setFromPoints([origin, end])
+const rayLine = new THREE.Line(geo,
+  new THREE.LineBasicMaterial({ color: 0xff0000 })
+)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 선택된 오브젝트 애니메이션</h3>
+<pre><code>// animate 내부:
+if (selectedObject) {
+  selectedObject.mesh.position.y =
+    baseY + Math.sin(t * 3) * 0.2
+  // 위아래 바운스로 선택 강조
+}</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

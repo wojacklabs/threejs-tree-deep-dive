@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>08 - 텍스처 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/07-shadows/">← 이전</a>
+    <h1>08. 텍스처</h1>
+    <a href="/lessons/09-env-map/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>텍스처란?</h2>
+        <p>텍스처는 <strong>2D 이미지를 3D 표면에 입히는 것</strong>입니다.
+           단색 Material로는 표현할 수 없는 디테일(나무결, 벽돌, 금속 스크래치 등)을
+           이미지로 표현합니다.</p>
+        <div class="diagram">
+<pre>
+  2D 이미지 (텍스처)          3D 오브젝트
+  ┌──────────┐               ╭─────╮
+  │ 벽돌 패턴  │   UV 매핑    ╱ 벽돌  ╲
+  │          │  ────────→  │  패턴  │
+  │          │              ╲      ╱
+  └──────────┘               ╰─────╯
+</pre>
+        </div>
+
+        <h2>텍스처 로딩</h2>
+        <p>실제 프로젝트에서는 <code>TextureLoader</code>로 이미지 파일을 로드합니다:</p>
+<pre><code>const loader = new THREE.TextureLoader()
+const texture = loader.load('/textures/brick.jpg')
+
+const material = new THREE.MeshStandardMaterial({
+  map: texture,  // color map에 텍스처 적용
+})</code></pre>
+        <p>이 레슨에서는 외부 이미지 없이 <strong>Canvas 2D API로 텍스처를 생성</strong>하여
+           동작 원리에 집중합니다.</p>
+
+        <h2>UV 매핑</h2>
+        <p><strong>UV 좌표</strong>는 2D 텍스처의 어느 부분이 3D 표면의 어느 점에 대응하는지를
+           정의합니다:</p>
+        <div class="diagram">
+<pre>
+  텍스처 좌표 (UV):
+
+  V
+  1 ┌──────────┐
+    │          │
+    │  이미지   │
+    │          │
+  0 └──────────┘
+    0          1  U
+
+  U = 가로 (0~1)
+  V = 세로 (0~1)
+</pre>
+        </div>
+        <p>내장 Geometry(BoxGeometry, SphereGeometry 등)는 이미 적절한 UV 좌표를 가지고 있어
+           텍스처를 바로 입힐 수 있습니다.</p>
+
+        <h2>Map 종류</h2>
+        <p>Material에 적용할 수 있는 다양한 텍스처 맵이 있습니다:</p>
+        <div class="diagram">
+<pre>
+  map (color)       표면 색상. 가장 기본적인 텍스처
+  normalMap         면의 기울기를 속여 울퉁불퉁한 느낌
+  roughnessMap      부위별 거칠기 차이
+  metalnessMap      부위별 금속성 차이
+  aoMap             간접 그림자 (Ambient Occlusion)
+  emissiveMap       부위별 발광
+  displacementMap   실제 vertex를 이동 (진짜 울퉁불퉁)
+  alphaMap          부위별 투명도
+</pre>
+        </div>
+
+        <h2>map (Color Map)</h2>
+        <p>가장 기본적인 텍스처입니다. 표면의 <strong>색상</strong>을 결정합니다.
+           캔버스 앞줄에서 체커보드, 벽돌, 나무 텍스처를 비교해보세요.</p>
+<pre><code>new THREE.MeshStandardMaterial({
+  map: texture,  // 색상 텍스처
+})</code></pre>
+
+        <h2>normalMap</h2>
+        <p>실제 geometry를 변형하지 않고 <strong>빛의 반사 방향만 속여</strong>
+           울퉁불퉁한 표면을 시뮬레이션합니다.</p>
+        <p>캔버스 중간줄에서 normalMap 유무를 비교해보세요.
+           같은 벽돌 텍스처인데 normalMap이 있는 쪽이 줄눈에 음영이 생깁니다.</p>
+<pre><code>new THREE.MeshStandardMaterial({
+  map: brickTexture,
+  normalMap: brickNormalMap,
+  normalScale: new THREE.Vector2(1.5, 1.5),
+  // normalScale: 효과 강도 조절
+})</code></pre>
+
+        <div class="note">
+          normalMap은 vertex를 추가하지 않으므로 <strong>성능 비용이 거의 없습니다</strong>.
+          하지만 실루엣은 여전히 평평하므로, 극단적으로 가까이 보면 티가 납니다.
+          진짜 형태를 바꾸려면 <code>displacementMap</code>을 사용해야 하며,
+          이 경우 충분한 segment가 필요합니다.
+        </div>
+
+        <h2>roughnessMap</h2>
+        <p>표면의 <strong>부위별 거칠기</strong>를 다르게 합니다.
+           흰색 부분은 거칠고(roughness=1), 검은 부분은 매끈합니다(roughness=0).</p>
+        <p>캔버스 뒷줄에서 균일한 roughness vs roughnessMap을 비교하세요.
+           roughnessMap이 적용된 구체는 부분적으로 광택이 다릅니다.</p>
+
+        <h2>Wrap (반복 모드)</h2>
+        <p>UV 좌표가 0~1 범위를 넘어갈 때 텍스처가 어떻게 반복되는지를 결정합니다:</p>
+<pre><code>// 기본값: ClampToEdgeWrapping — 가장자리 픽셀이 늘어남
+
+// RepeatWrapping — 타일처럼 반복
+texture.wrapS = THREE.RepeatWrapping  // 가로
+texture.wrapT = THREE.RepeatWrapping  // 세로
+texture.repeat.set(3, 3)  // 3×3 반복
+
+// MirroredRepeatWrapping — 거울처럼 뒤집혀 반복
+texture.wrapS = THREE.MirroredRepeatWrapping
+texture.wrapT = THREE.MirroredRepeatWrapping</code></pre>
+        <p>캔버스 뒷줄 바닥 평면에서 RepeatWrapping과 MirroredRepeatWrapping을 비교하세요.</p>
+
+        <h2>텍스처 필터링</h2>
+        <p>텍스처가 확대/축소될 때 보간 방식을 결정합니다:</p>
+<pre><code>// 확대 시 (텍스처보다 화면 픽셀이 더 클 때)
+texture.magFilter = THREE.LinearFilter   // 부드럽게 (기본)
+texture.magFilter = THREE.NearestFilter  // 픽셀 느낌 (도트 스타일)
+
+// 축소 시
+texture.minFilter = THREE.LinearMipmapLinearFilter  // 기본, 밉맵 사용</code></pre>
+
+        <div class="note">
+          <strong>밉맵(Mipmap)</strong>은 텍스처를 점점 작은 크기로 미리 만들어두는 기법입니다.
+          먼 오브젝트에 큰 텍스처를 그대로 쓰면 깜빡임(moiré)이 발생하는데,
+          밉맵이 이를 방지합니다. Three.js는 기본으로 밉맵을 생성합니다.
+          텍스처 크기가 <strong>2의 거듭제곱</strong>(256, 512, 1024...)이면 밉맵이 효율적입니다.
+        </div>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 실제 프로젝트에서의 텍스처 로딩</h3>
+<pre><code>// 이미지 파일 로드 (비동기)
+const loader = new THREE.TextureLoader()
+const colorMap = loader.load('/textures/brick_color.jpg')
+const normalMap = loader.load('/textures/brick_normal.jpg')
+const roughMap = loader.load('/textures/brick_rough.jpg')
+
+const material = new THREE.MeshStandardMaterial({
+  map: colorMap,
+  normalMap: normalMap,
+  roughnessMap: roughMap,
+})</code></pre>
+          <p>이 레슨에서는 Canvas 2D API로 텍스처를 생성하지만,
+             실제 프로젝트에서는 위처럼 이미지를 로드합니다.
+             <code>load()</code>는 비동기이므로 로딩이 완료되면 자동으로 화면이 갱신됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: Canvas로 프로시져럴 텍스처 생성</h3>
+<pre><code>function createBrickTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas')
+  c.width = 256; c.height = 256
+  const ctx = c.getContext('2d')!
+
+  // 배경 (줄눈 색)
+  ctx.fillStyle = '#8B4513'
+  ctx.fillRect(0, 0, 256, 256)
+
+  // 벽돌 그리기
+  const bw = 60, bh = 28, gap = 4
+  for (let row = 0; row < 9; row++) {
+    const offset = row % 2 === 0 ? 0 : bw / 2
+    for (let col = -1; col < 5; col++) {
+      const x = col * (bw + gap) + offset
+      const y = row * (bh + gap)
+      // 벽돌마다 약간 다른 색상 (랜덤)
+      ctx.fillStyle = `rgb(${130+Math.random()*40},...)`
+      ctx.fillRect(x, y, bw, bh)
+    }
+  }
+
+  return new THREE.CanvasTexture(c)
+}</code></pre>
+          <p><code>CanvasTexture</code>는 Canvas 2D API로 그린 것을 바로 텍스처로 사용합니다.
+             프로시져럴 텍스처, 동적 텍스트, 디버그 정보 표시 등에 유용합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: Color Map 적용</h3>
+<pre><code>const texture = createBrickTexture()
+const material = new THREE.MeshStandardMaterial({
+  map: texture,       // color 텍스처
+  roughness: 0.8,     // 전체 거칠기
+})</code></pre>
+          <p><code>map</code>에 텍스처를 넣으면 <code>color</code> 속성 대신
+             텍스처의 색상이 사용됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: Normal Map 적용</h3>
+<pre><code>const material = new THREE.MeshStandardMaterial({
+  map: brickTexture,
+  normalMap: brickNormalMap,
+  normalScale: new THREE.Vector2(1.5, 1.5),
+  // normalScale이 클수록 울퉁불퉁한 효과가 강해짐
+})</code></pre>
+          <p>normalMap의 RGB 값이 법선 방향을 인코딩합니다.
+             (128, 128, 255) = 평면을 향한 기본 법선,
+             이 값에서 벗어날수록 기울어진 면으로 인식됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: Wrap과 Repeat</h3>
+<pre><code>const texture = createCheckerTexture(...)
+
+// 타일처럼 반복
+texture.wrapS = THREE.RepeatWrapping
+texture.wrapT = THREE.RepeatWrapping
+texture.repeat.set(3, 3)
+
+// 또는 거울처럼 반복
+texture.wrapS = THREE.MirroredRepeatWrapping
+texture.wrapT = THREE.MirroredRepeatWrapping
+texture.repeat.set(2, 2)
+
+// 오프셋 (시작 위치 이동)
+texture.offset.set(0.5, 0)
+
+// 회전
+texture.rotation = Math.PI / 4  // 45도
+texture.center.set(0.5, 0.5)   // 회전 중심</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 텍스처 필터링</h3>
+<pre><code>// 확대 시 — 픽셀 아트 스타일
+texture.magFilter = THREE.NearestFilter
+
+// 기본값 (부드러운 보간)
+texture.magFilter = THREE.LinearFilter
+
+// 축소 시 — 밉맵 사용 (기본)
+texture.minFilter = THREE.LinearMipmapLinearFilter
+
+// colorSpace 설정 (sRGB 이미지인 경우)
+texture.colorSpace = THREE.SRGBColorSpace
+// normalMap, roughnessMap 등 데이터 텍스처는
+// LinearSRGBColorSpace (기본값)를 사용</code></pre>
+          <p><code>colorSpace</code>는 color map에만 <code>SRGBColorSpace</code>를 설정합니다.
+             normalMap이나 roughnessMap 같은 데이터 텍스처에는 설정하지 않습니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

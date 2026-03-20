@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>09 - 환경맵과 배경 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .controls-bar button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .controls-bar button:hover { background: #21262d; }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/08-textures/">← 이전</a>
+    <h1>09. 환경맵과 배경</h1>
+    <a href="/lessons/10-scene-graph/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="controls-bar">
+        <button id="btn-tonemap">ToneMap: ACESFilmic</button>
+        <button id="btn-bg">Background: ON</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>환경맵(Environment Map)이란?</h2>
+        <p>환경맵은 오브젝트 <strong>주변 환경</strong>을 담은 텍스처입니다.
+           금속이나 유리처럼 반사/굴절하는 재질이 "무엇을 비추는지"를 결정합니다.</p>
+        <div class="diagram">
+<pre>
+  환경맵 없이:              환경맵 있으면:
+  ┌───────┐                ┌───────┐
+  │       │                │ 주변   │
+  │ 검은색 │                │ 풍경이  │
+  │ 반사  │                │ 비침   │
+  └───────┘                └───────┘
+  금속인데 아무것도            실제 금속처럼 보임
+  비치지 않음
+</pre>
+        </div>
+        <p>캔버스 뒷줄에서 envMap 유무를 비교해보세요.</p>
+
+        <div class="note">
+          <strong>환경맵은 미리 만들어둔 고정 이미지입니다.</strong>
+          씬에 있는 다른 mesh(옆의 큐브, 캐릭터 등)는 반사에 보이지 않습니다.
+          오직 환경맵 이미지(하늘, 풍경 등)만 반사됩니다.
+          캔버스의 금속 구체에 옆의 빨간 기둥이나 초록 원뿔이 비치지 않는 이유가 이것입니다.
+        </div>
+
+        <h2>scene.background vs scene.environment</h2>
+        <p>두 가지는 다른 역할을 합니다:</p>
+<pre><code>// 배경 이미지 (카메라 뒤에 보이는 것)
+scene.background = envMap
+
+// 모든 PBR material에 자동 적용되는 환경광
+scene.environment = envMap</code></pre>
+        <div class="diagram">
+<pre>
+  scene.background     → 배경에 보이는 하늘/풍경
+  scene.environment    → 오브젝트 반사에 사용되는 환경
+
+  둘은 다른 텍스처를 쓸 수 있음:
+  background = 흐린 풍경
+  environment = 선명한 반사용 텍스처
+</pre>
+        </div>
+
+        <div class="note">
+          <code>scene.environment</code>를 설정하면 모든 <code>MeshStandardMaterial</code>에
+          자동으로 envMap이 적용됩니다.
+          개별 material에서 <code>envMapIntensity = 0</code>으로 비활성화할 수 있습니다.
+        </div>
+
+        <h2>CubeTexture</h2>
+        <p>환경맵의 가장 기본적인 형태입니다. 큐브의 6면 이미지로 구성됩니다:</p>
+<pre><code>const loader = new THREE.CubeTextureLoader()
+const envMap = loader.load([
+  'px.jpg', 'nx.jpg',  // +X, -X (좌우)
+  'py.jpg', 'ny.jpg',  // +Y, -Y (상하)
+  'pz.jpg', 'nz.jpg',  // +Z, -Z (앞뒤)
+])</code></pre>
+        <div class="diagram">
+<pre>
+  큐브맵 6면:
+         ┌──────┐
+         │  +Y  │  (위: 하늘)
+  ┌──────┼──────┼──────┬──────┐
+  │  -X  │  +Z  │  +X  │  -Z  │
+  └──────┼──────┼──────┴──────┘
+         │  -Y  │  (아래: 땅)
+         └──────┘
+</pre>
+        </div>
+
+        <h2>HDR 환경맵 (실무 표준)</h2>
+        <p>실무에서는 CubeTexture 대신 <strong>HDR(High Dynamic Range)</strong> 이미지를 사용합니다:</p>
+<pre><code>import { RGBELoader } from
+  'three/examples/jsm/loaders/RGBELoader.js'
+
+const loader = new RGBELoader()
+loader.load('/env.hdr', (texture) => {
+  texture.mapping =
+    THREE.EquirectangularReflectionMapping
+  scene.background = texture
+  scene.environment = texture
+})</code></pre>
+        <p>HDR의 장점:</p>
+        <ul>
+          <li>파일 1개 (6장이 아닌 equirectangular 파노라마)</li>
+          <li>밝기 범위가 0~1을 넘어 현실적인 조명/반사</li>
+          <li><a href="https://polyhaven.com" style="color:#58a6ff">polyhaven.com</a>에서 무료 HDR 제공</li>
+        </ul>
+
+        <h2>금속 재질</h2>
+        <p>캔버스 앞줄에서 4가지 금속을 비교할 수 있습니다:</p>
+        <div class="diagram">
+<pre>
+  재질       color      metalness  roughness
+  ──────────────────────────────────────────
+  크롬       #ffffff    1.0        0.0
+  금         #ffd700    1.0        0.2
+  알루미늄   #cccccc    0.9        0.5
+  구리       #b87333    1.0        0.3
+</pre>
+        </div>
+        <p>금속의 색상은 <code>color</code>로 결정됩니다.
+           크롬은 흰색(무채색 반사), 금은 노란 반사, 구리는 주황 반사.</p>
+
+        <h2>MeshPhysicalMaterial — 유리</h2>
+        <p><code>MeshPhysicalMaterial</code>은 <code>MeshStandardMaterial</code>의 확장으로,
+           <strong>투과(transmission)</strong>와 <strong>굴절(refraction)</strong>을 지원합니다:</p>
+<pre><code>new THREE.MeshPhysicalMaterial({
+  transmission: 1.0,  // 투과율 (0=불투명, 1=완전 투명)
+  thickness: 1.5,     // 두께 (굴절 강도에 영향)
+  ior: 1.5,           // 굴절률 (유리=1.5, 다이아=2.42)
+  roughness: 0.0,     // 0=깨끗한 유리
+})</code></pre>
+
+        <div class="note">
+          <code>MeshPhysicalMaterial</code>은 <code>MeshStandardMaterial</code>보다
+          <strong>무겁습니다</strong>. transmission, clearcoat, sheen 등
+          고급 기능이 필요할 때만 사용하세요.
+        </div>
+
+        <h2>톤매핑 (Tone Mapping)</h2>
+        <p>HDR 값(0~무한)을 화면에 표시할 수 있는 범위(0~1)로 변환하는 과정입니다.
+           캔버스의 <strong>ToneMap</strong> 버튼으로 5종을 비교할 수 있습니다:</p>
+        <div class="diagram">
+<pre>
+  톤매핑       특징
+  ──────────────────────────────────
+  Linear       변환 없음 (HDR이 잘려서 하얗게 날아감)
+  Reinhard     부드러운 롤오프
+  Cineon       영화 필름 느낌
+  ACESFilmic   영화 색감 (가장 많이 사용)
+  AgX          최신, 색상 보존 우수
+</pre>
+        </div>
+<pre><code>renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.0  // 노출 조절</code></pre>
+
+        <h2>주변 mesh를 진짜로 반사하려면?</h2>
+        <p>고정 환경맵의 한계를 넘어 <strong>실시간 반사</strong>가 필요한 경우가 있습니다:</p>
+        <div class="diagram">
+<pre>
+  방법              반사 대상        비용
+  ──────────────────────────────────────────
+  고정 envMap       환경 이미지만     거의 무료 (텍스처 읽기 1회)
+  CubeCamera       주변 mesh 전체    6배 (6방향 렌더링)
+  Reflector        주변 mesh 전체    2배 (1방향 렌더링)
+</pre>
+        </div>
+        <p><strong>CubeCamera</strong>는 오브젝트 위치에서 6방향으로 씬을 렌더링하여
+           실시간 큐브맵을 만듭니다. 크롬 구체처럼 모든 방향을 반사해야 할 때 사용합니다.</p>
+        <p><strong>Reflector</strong>는 수면/거울처럼 <strong>평면</strong> 반사만 필요할 때 사용합니다.
+           카메라를 평면 기준으로 뒤집어 1번만 렌더링하므로 CubeCamera보다 훨씬 효율적입니다.</p>
+
+        <div class="note">
+          물 표면의 반사는 <code>Reflector</code> 또는 Three.js 내장 <code>Water</code> 클래스로 구현합니다.
+          물답게 보이려면 반사 외에도 <strong>프레넬 효과</strong>(정면은 투과, 측면은 반사),
+          normal map 왜곡, vertex displacement(파도)가 필요합니다.
+          내장 <code>Water</code>는 데모 수준이며, 프로덕션에서는 커스텀 셰이더를 사용합니다 (Lesson 17).
+        </div>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 톤매핑 설정</h3>
+<pre><code>const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.0
+// 톤매핑은 환경맵 사용 시 거의 필수
+// exposure로 전체 밝기를 조절</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 환경맵 생성/로딩</h3>
+<pre><code>// 실제 프로젝트 — CubeTextureLoader
+const cubeLoader = new THREE.CubeTextureLoader()
+const envMap = cubeLoader.load([
+  'px.jpg', 'nx.jpg',
+  'py.jpg', 'ny.jpg',
+  'pz.jpg', 'nz.jpg',
+])
+
+// 또는 HDR (추천)
+import { RGBELoader } from
+  'three/examples/jsm/loaders/RGBELoader.js'
+
+new RGBELoader().load('env.hdr', (texture) => {
+  texture.mapping =
+    THREE.EquirectangularReflectionMapping
+  scene.background = texture
+  scene.environment = texture
+})</code></pre>
+          <p>이 레슨에서는 Canvas 2D로 프로시져럴 CubeTexture를 생성합니다.
+             실제 프로젝트에서는 위 코드를 사용하세요.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 배경과 환경 설정</h3>
+<pre><code>// 배경 (카메라 뒤에 보이는 것)
+scene.background = envMap
+
+// 모든 PBR material에 자동 적용
+scene.environment = envMap
+
+// 개별 material에서 강도 조절
+material.envMapIntensity = 1.5  // 반사 강하게
+material.envMapIntensity = 0    // 반사 비활성화</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 금속 재질</h3>
+<pre><code>// 크롬 (완전 반사, 무채색)
+new THREE.MeshStandardMaterial({
+  color: 0xffffff,
+  metalness: 1.0,
+  roughness: 0.0,
+})
+
+// 금 (노란 반사)
+new THREE.MeshStandardMaterial({
+  color: 0xffd700,
+  metalness: 1.0,
+  roughness: 0.2,
+})
+
+// 구리 (주황 반사)
+new THREE.MeshStandardMaterial({
+  color: 0xb87333,
+  metalness: 1.0,
+  roughness: 0.3,
+})</code></pre>
+          <p>금속에서 <code>color</code>는 반사광의 색을 결정합니다.
+             비금속에서는 표면 색, 금속에서는 반사 색이 됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 유리 (MeshPhysicalMaterial)</h3>
+<pre><code>new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  metalness: 0.0,
+  roughness: 0.0,
+  transmission: 1.0,  // 투과율 (유리의 핵심)
+  thickness: 1.5,     // 내부 두께 (굴절 강도)
+  ior: 1.5,           // 굴절률
+  // 유리: 1.5
+  // 물: 1.33
+  // 다이아몬드: 2.42
+})
+
+// 착색 유리 — color로 색 지정
+new THREE.MeshPhysicalMaterial({
+  color: 0x4488ff,   // 파란 유리
+  transmission: 0.9,
+  ...
+})</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 톤매핑 변경 (런타임)</h3>
+<pre><code>renderer.toneMapping = THREE.ACESFilmicToneMapping
+
+// 변경 시 material 재컴파일 필요
+scene.traverse((obj) => {
+  if (obj instanceof THREE.Mesh) {
+    obj.material.needsUpdate = true
+  }
+})</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

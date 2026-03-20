@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>14 - 파티클 시스템 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+    .controls-bar button {
+      padding: 5px 12px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 11px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .controls-bar button:hover { background: #21262d; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/13-model-animation/">← 이전</a>
+    <h1>14. 파티클 시스템</h1>
+    <a href="/lessons/15-postprocessing/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+      <div class="controls-bar">
+        <button id="btn-branches">Branches: 4</button>
+        <button id="btn-spin">Spin: 1.5</button>
+        <button id="btn-count">Count: 15k</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>파티클이란?</h2>
+        <p>파티클은 <strong>수천~수만 개의 작은 점</strong>으로 이루어진 시각 효과입니다.
+           별, 불꽃, 연기, 비, 눈 등을 표현합니다.</p>
+        <p>Three.js에서는 <code>Points</code> + <code>BufferGeometry</code>로 구현합니다.
+           각 점이 하나의 파티클입니다.</p>
+
+        <h2>Mesh vs Points</h2>
+        <div class="diagram">
+<pre>
+  Mesh (삼각형 기반):          Points (점 기반):
+  ┌──────────┐                 ·  ·    ·
+  │╲  면  ╱  │                ·    ·  ·
+  │  ╲  ╱    │              ·  ·      ·
+  │   ╲╱     │                ·    ·
+  └──────────┘                 ·  ·  ·
+
+  vertex → 삼각형 → 면         vertex → 점 (크기 지정)
+  무거움 (면 렌더링)             가벼움 (점만 렌더링)
+  수백~수천 개                  수만~수십만 개 가능
+</pre>
+        </div>
+
+        <h2>BufferGeometry 직접 구성</h2>
+        <p>Lesson 02에서 배운 내장 Geometry와 달리,
+           파티클은 <code>Float32Array</code>에 직접 좌표를 넣습니다:</p>
+<pre><code>const count = 5000
+const positions = new Float32Array(count * 3)
+// count * 3 → 각 점마다 x, y, z
+
+for (let i = 0; i < count; i++) {
+  const i3 = i * 3
+  positions[i3]     = (Math.random() - 0.5) * 10  // x
+  positions[i3 + 1] = (Math.random() - 0.5) * 10  // y
+  positions[i3 + 2] = (Math.random() - 0.5) * 10  // z
+}
+
+const geometry = new THREE.BufferGeometry()
+geometry.setAttribute('position',
+  new THREE.BufferAttribute(positions, 3)
+  //                         데이터, 3개씩 끊어읽기
+)</code></pre>
+
+        <h2>PointsMaterial</h2>
+<pre><code>new THREE.PointsMaterial({
+  size: 0.05,              // 점 크기 (월드 유닛 또는 픽셀)
+  sizeAttenuation: true,   // 거리에 따라 작아짐 (원근)
+  color: 0xffffff,         // 전체 색상
+  vertexColors: true,      // 점별 다른 색상 (color attribute)
+  map: texture,            // 점 모양을 이미지로 (원형, 별 등)
+  alphaTest: 0.01,         // map 사용 시 투명 부분 잘라냄
+  transparent: true,       // 알파 사용 시 필요
+  opacity: 1.0,            // 전체 투명도
+  depthWrite: false,       // 투명 파티클 겹침 방지
+  blending: THREE.AdditiveBlending,  // 겹치면 밝아짐
+})</code></pre>
+
+        <p><strong>depthWrite — 왜 false인가?</strong></p>
+        <div class="diagram">
+<pre>
+  depthWrite: true (기본값):
+  앞 파티클이 깊이 버퍼에 기록 → 뒤 파티클이 가려짐
+  → 투명한 점인데 검은 사각형이 보임
+
+  depthWrite: false:
+  깊이 버퍼에 기록 안 함 → 뒤 파티클도 정상 렌더링
+  → 겹쳐도 자연스러움
+</pre>
+        </div>
+
+        <p><strong>blending 모드 비교:</strong></p>
+        <div class="diagram">
+<pre>
+  NormalBlending     앞이 뒤를 가림 (기본)
+  AdditiveBlending   겹치면 밝아짐 (불꽃, 마법, 별)
+  MultiplyBlending   겹치면 곱셈 (색 필터)
+</pre>
+        </div>
+        <p>파티클 이펙트에는 거의 <code>AdditiveBlending</code>을 사용합니다.
+           겹치는 부분이 밝아져서 발광 느낌이 납니다.</p>
+
+        <p><strong>sizeAttenuation과 성능:</strong></p>
+        <p><code>sizeAttenuation</code> 자체의 비용은 거의 없습니다 —
+           이미 계산된 z값으로 나눗셈 1회를 추가할 뿐입니다.
+           다만 <strong>가까운 파티클이 화면에서 크게 렌더링</strong>되면
+           fragment shader 호출이 늘어나(fill rate 증가) 간접적으로 영향을 줄 수 있습니다.
+           size 값이 극단적으로 크지 않으면 체감할 수준은 아닙니다.</p>
+
+        <p><strong>map — 점 모양 커스텀:</strong></p>
+        <p>기본 점은 사각형입니다. <code>map</code>에 텍스처를 넣으면
+           원형, 별, 불꽃 등 원하는 모양으로 바꿀 수 있습니다:</p>
+<pre><code>// Canvas로 원형 파티클 텍스처 생성
+const c = document.createElement('canvas')
+c.width = 32; c.height = 32
+const ctx = c.getContext('2d')!
+ctx.beginPath()
+ctx.arc(16, 16, 14, 0, Math.PI * 2)
+ctx.fillStyle = '#ffffff'
+ctx.fill()
+
+material.map = new THREE.CanvasTexture(c)
+material.alphaTest = 0.01  // 투명 부분 잘라냄</code></pre>
+
+        <h2>Vertex Colors — 점별 색상</h2>
+        <p>position과 같은 방식으로 <code>color</code> attribute를 추가합니다:</p>
+<pre><code>const colors = new Float32Array(count * 3)
+for (let i = 0; i < count; i++) {
+  const i3 = i * 3
+  colors[i3]     = 1.0   // R
+  colors[i3 + 1] = 0.5   // G
+  colors[i3 + 2] = 0.0   // B
+}
+geometry.setAttribute('color',
+  new THREE.BufferAttribute(colors, 3)
+)</code></pre>
+        <p>캔버스의 은하에서 중심=주황, 외곽=파랑으로 색이 변하는 것이 vertex colors입니다.</p>
+
+        <h2>캔버스 데모: 은하</h2>
+        <p>나선 은하를 파티클로 구현한 예시입니다.
+           <strong>Branches</strong>, <strong>Spin</strong>, <strong>Count</strong> 버튼으로
+           파라미터를 변경해보세요.</p>
+        <div class="diagram">
+<pre>
+  은하 생성 알고리즘:
+
+  1. 거리 r = random(0 ~ radius)
+  2. 가지 각도 = (i % branches) / branches * 2π
+  3. 스핀 = r * spinFactor  (멀수록 더 휘어짐)
+  4. 최종 각도 = 가지 각도 + 스핀
+  5. x = cos(각도) * r + 랜덤 오프셋
+     z = sin(각도) * r + 랜덤 오프셋
+  6. 색상 = lerp(주황, 파랑, r / radius)
+</pre>
+        </div>
+
+        <h2>캔버스 데모: 파티클 분수</h2>
+        <p>파티클에 <strong>물리(속도, 중력)</strong>를 적용한 예시입니다.
+           매 프레임 position을 직접 수정합니다:</p>
+<pre><code>// 매 프레임:
+velocity.y += gravity * delta    // 중력
+position.x += velocity.x * delta // 이동
+position.y += velocity.y * delta
+
+// 수명이 다하거나 바닥 아래면 리셋
+if (lifetime <= 0 || position.y < 0) {
+  resetParticle(i)
+}
+
+// GPU에 변경 알림 (핵심!)
+geometry.attributes.position.needsUpdate = true</code></pre>
+
+        <div class="note">
+          <strong>needsUpdate = true</strong>가 핵심입니다.
+          <code>Float32Array</code>의 값을 바꾸는 것만으로는 GPU에 반영되지 않습니다.
+          매 프레임 position을 수정했으면 반드시 <code>needsUpdate = true</code>를 설정하세요.
+        </div>
+
+        <h2>성능</h2>
+        <div class="diagram">
+<pre>
+  파티클 수     일반적인 성능
+  ───────────────────────────
+  ~1,000       매우 여유
+  ~10,000      60fps 가능
+  ~50,000      약간 무거움
+  ~100,000     GPU에 따라
+  ~1,000,000   GPU 파티클 (셰이더) 필요
+</pre>
+        </div>
+        <p><code>Count</code> 버튼으로 5k~50k를 전환하면서 FPS 변화를 체감해보세요.</p>
+        <p>더 많은 파티클이 필요하면 vertex shader에서 파티클을 이동시키는
+           <strong>GPU 파티클</strong> 방식을 사용합니다 (Lesson 17 셰이더에서 기초).</p>
+
+        <h2>Points vs Gaussian Splatting</h2>
+        <p>최근 3D 재구성 분야에서 주목받는 <em>Gaussian Splatting</em>도 점 기반이지만,
+           Points와는 완전히 다른 기술입니다:</p>
+        <div class="diagram">
+<pre>
+                Points              Gaussian Splatting
+  ─────────────────────────────────────────────────
+  렌더링 단위   점 (고정 크기)       3D 가우시안 타원체
+  데이터/점     position 12B        pos+공분산+SH ~60B+
+  렌더 방식     GL_POINTS (표준)     커스텀 래스터라이저
+  정렬          불필요              매 프레임 깊이 정렬
+  100만 점      60fps 여유          30~60fps (GPU 의존)
+  용도          이펙트, 시각화       포토리얼 3D 재구성
+</pre>
+        </div>
+        <p>Points는 가볍고 이펙트에 적합, Splatting은 무겁지만
+           실사 수준의 3D 재구성에 사용됩니다.
+           Three.js는 Splatting을 내장 지원하지 않으며 외부 라이브러리가 필요합니다.</p>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 배경 별 (가장 기본적인 Points)</h3>
+<pre><code>const count = 2000
+const positions = new Float32Array(count * 3)
+
+for (let i = 0; i < count; i++) {
+  const i3 = i * 3
+  positions[i3]     = (Math.random() - 0.5) * 100
+  positions[i3 + 1] = (Math.random() - 0.5) * 100
+  positions[i3 + 2] = (Math.random() - 0.5) * 100
+}
+
+const geo = new THREE.BufferGeometry()
+geo.setAttribute('position',
+  new THREE.BufferAttribute(positions, 3)
+)
+
+const stars = new THREE.Points(geo,
+  new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.15,
+    sizeAttenuation: true,
+  })
+)
+scene.add(stars)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 은하 — 나선 분포</h3>
+<pre><code>for (let i = 0; i < count; i++) {
+  const i3 = i * 3
+
+  // 중심에서의 거리
+  const r = Math.random() * radius
+
+  // 나선 가지 각도
+  const branchAngle =
+    (i % branches) / branches * Math.PI * 2
+
+  // 스핀 (거리에 비례)
+  const spinAngle = r * spin
+
+  // 랜덤 오프셋
+  const randomX = Math.pow(Math.random(), 3)
+    * (Math.random() < 0.5 ? 1 : -1) * randomness * r
+
+  // 최종 위치
+  positions[i3] =
+    Math.cos(branchAngle + spinAngle) * r + randomX
+
+  // 색상 보간 (중심=주황, 외곽=파랑)
+  const mixed = colorInside.clone()
+    .lerp(colorOutside, r / radius)
+  colors[i3] = mixed.r
+  colors[i3 + 1] = mixed.g
+  colors[i3 + 2] = mixed.b
+}</code></pre>
+          <p><code>Math.pow(random, 3)</code>은 중심에 가까울수록 밀집되게 합니다.
+             지수가 높을수록 중심 집중도가 강해집니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 파티클 분수 — 물리 시뮬레이션</h3>
+<pre><code>// 파티클 초기화
+function resetParticle(i: number) {
+  positions[i3] = 8       // 발사 위치 x
+  positions[i3 + 1] = 0   // 바닥
+  positions[i3 + 2] = 0
+
+  velocities[i3] = (Math.random() - 0.5) * 0.8  // x 랜덤
+  velocities[i3 + 1] = 2 + Math.random() * 3    // 위로 발사
+  velocities[i3 + 2] = (Math.random() - 0.5) * 0.8
+
+  lifetimes[i] = Math.random() * 3  // 수명 (초)
+}
+
+// 매 프레임 업데이트
+const gravity = -9.8
+for (let i = 0; i < count; i++) {
+  lifetimes[i] -= delta
+  if (lifetimes[i] <= 0) { resetParticle(i); continue }
+
+  velocities[i3 + 1] += gravity * delta  // 중력
+  positions[i3] += velocities[i3] * delta
+  positions[i3 + 1] += velocities[i3 + 1] * delta
+  positions[i3 + 2] += velocities[i3 + 2] * delta
+}
+
+// GPU에 변경 알림!
+geometry.attributes.position.needsUpdate = true</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 파라미터 변경 시 재생성</h3>
+<pre><code>function generateGalaxy() {
+  // 기존 리소스 정리 (메모리 누수 방지)
+  if (galaxyPoints) {
+    galaxyGeo.dispose()            // geometry 해제
+    galaxyPoints.material.dispose() // material 해제
+    scene.remove(galaxyPoints)      // 씬에서 제거
+  }
+
+  // 새로운 geometry/material/points 생성
+  galaxyGeo = new THREE.BufferGeometry()
+  // ... positions, colors 계산 ...
+  galaxyPoints = new THREE.Points(galaxyGeo, material)
+  scene.add(galaxyPoints)
+}</code></pre>
+          <p><code>dispose()</code> 호출이 핵심입니다.
+             파라미터가 바뀔 때마다 새 geometry를 만들므로,
+             이전 것을 해제하지 않으면 GPU 메모리가 계속 쌓입니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

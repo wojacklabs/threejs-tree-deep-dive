@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>15 - 포스트프로세싱 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-panel {
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      right: 8px;
+      z-index: 10;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+    .control-group {
+      background: rgba(22,27,34,0.9);
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+    }
+    .control-group label { display: block; margin: 4px 0 2px; }
+    .control-group input[type="range"] { width: 100px; }
+    .effect-toggles {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .effect-toggles button {
+      padding: 5px 10px;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      background: #161b22;
+      color: #8b949e;
+      font-size: 10px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .effect-toggles button:hover { background: #21262d; }
+    .effect-toggles button.active { background: #1a3050; border-color: #58a6ff; color: #e6edf3; }
+    .val { color: #58a6ff; }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/14-particles/">← 이전</a>
+    <h1>15. 포스트프로세싱</h1>
+    <a href="/lessons/16-shaders/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="controls-panel">
+        <div class="control-group">
+          <strong>Bloom</strong>
+          <label>strength: <span class="val" id="val-strength">0.8</span></label>
+          <input type="range" id="bloom-strength" min="0" max="3" step="0.1" value="0.8">
+          <label>radius: <span class="val" id="val-radius">0.4</span></label>
+          <input type="range" id="bloom-radius" min="0" max="1" step="0.05" value="0.4">
+          <label>threshold: <span class="val" id="val-threshold">0.85</span></label>
+          <input type="range" id="bloom-threshold" min="0" max="1" step="0.05" value="0.85">
+        </div>
+        <div class="control-group">
+          <strong>Effects</strong>
+          <div class="effect-toggles">
+            <button id="btn-bloom" class="active">Bloom: ON</button>
+            <button id="btn-glitch">Glitch: OFF</button>
+            <button id="btn-film">Film: OFF</button>
+            <button id="btn-rgb">RGB Shift: OFF</button>
+            <button id="btn-dot">Dot Screen: OFF</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>포스트프로세싱이란?</h2>
+        <p>3D 씬을 렌더링한 <strong>후</strong> 결과 이미지에 추가 효과를 적용하는 기법입니다.
+           카메라 필터처럼 <strong>최종 화면</strong>을 가공합니다.</p>
+        <div class="diagram">
+<pre>
+  일반 렌더링:
+  Scene → Camera → 화면
+
+  포스트프로세싱:
+  Scene → Camera → [텍스처] → Bloom → Film → ... → 화면
+                   ↑ 여기서부터 2D 이미지 처리
+</pre>
+        </div>
+
+        <h2>EffectComposer</h2>
+        <p>여러 포스트프로세싱 효과(Pass)를 <strong>체이닝</strong>하는 컨테이너입니다:</p>
+<pre><code>import { EffectComposer } from
+  'three/examples/jsm/postprocessing/EffectComposer.js'
+
+const composer = new EffectComposer(renderer)
+composer.addPass(pass1)  // 순서대로 적용
+composer.addPass(pass2)
+composer.addPass(pass3)
+
+// renderer.render() 대신:
+composer.render()</code></pre>
+
+        <div class="note">
+          포스트프로세싱 사용 시 <code>renderer.render()</code>를
+          <strong><code>composer.render()</code></strong>로 교체해야 합니다.
+          둘 다 호출하면 이중 렌더링이 됩니다.
+        </div>
+
+        <h2>Pass 파이프라인</h2>
+        <p>각 Pass는 이전 Pass의 결과를 입력으로 받아 처리합니다:</p>
+        <div class="diagram">
+<pre>
+  RenderPass (씬 렌더링)
+      ↓ 텍스처
+  UnrealBloomPass (발광)
+      ↓ 텍스처
+  FilmPass (필름 그레인)
+      ↓ 텍스처
+  OutputPass (톤매핑/색보정)
+      ↓
+  화면에 표시
+</pre>
+        </div>
+        <p><strong>RenderPass</strong>가 첫 번째, <strong>OutputPass</strong>가 마지막이어야 합니다.</p>
+
+        <h2>UnrealBloomPass (발광)</h2>
+        <p>가장 많이 사용되는 포스트프로세싱 효과입니다.
+           밝은 부분이 <strong>주변으로 번지는</strong> 발광 효과를 만듭니다.</p>
+<pre><code>new UnrealBloomPass(
+  resolution,  // Vector2 — 렌더 해상도
+  strength,    // 0~3 — 발광 강도
+  radius,      // 0~1 — 번짐 반경
+  threshold    // 0~1 — 이 밝기 이상만 bloom
+)</code></pre>
+        <p>캔버스 하단 슬라이더로 3가지 파라미터를 조절해보세요:</p>
+        <ul>
+          <li><strong>threshold</strong> — 낮추면 더 많은 부분이 발광. 0이면 전체가 빛남</li>
+          <li><strong>strength</strong> — 발광의 강도. 높을수록 밝게 번짐</li>
+          <li><strong>radius</strong> — 번짐의 범위. 높을수록 넓게 퍼짐</li>
+        </ul>
+
+        <div class="note">
+          Bloom이 효과적이려면 발광할 오브젝트에 <code>emissive</code>와
+          높은 <code>emissiveIntensity</code>를 설정해야 합니다.
+          <code>threshold</code>보다 밝은 부분만 bloom이 적용됩니다.
+        </div>
+
+        <h2>다른 내장 Pass들</h2>
+        <p>캔버스의 Effects 버튼으로 켜고 끌 수 있습니다:</p>
+        <div class="diagram">
+<pre>
+  Pass           효과                 용도
+  ──────────────────────────────────────────────
+  GlitchPass     화면 찢어짐/왜곡      공포, 사이버펑크
+  FilmPass       필름 그레인/노이즈     레트로, 영화 느낌
+  RGBShiftPass   색수차 (RGB 분리)     렌즈 효과
+  DotScreenPass  도트 패턴             만화/팝아트
+  BokehPass      피사계 심도 (DOF)     카메라 초점
+  SSAOPass       간접 그림자            현실감 증가
+</pre>
+        </div>
+
+        <h2>ShaderPass — 커스텀 효과</h2>
+        <p>내장 shader를 Pass로 감싸서 사용합니다:</p>
+<pre><code>import { ShaderPass } from
+  'three/examples/jsm/postprocessing/ShaderPass.js'
+import { RGBShiftShader } from
+  'three/examples/jsm/shaders/RGBShiftShader.js'
+
+const pass = new ShaderPass(RGBShiftShader)
+pass.uniforms['amount'].value = 0.003
+composer.addPass(pass)</code></pre>
+        <p>자신만의 셰이더를 작성해서 <code>ShaderPass</code>에 넣으면
+           완전한 커스텀 포스트프로세싱도 가능합니다 (Lesson 16).</p>
+
+        <h2>성능</h2>
+        <p>포스트프로세싱은 <strong>전체 화면 픽셀</strong>을 처리하므로 비용이 있습니다:</p>
+        <div class="diagram">
+<pre>
+  Pass 수        비용
+  ──────────────────────────
+  RenderPass만   기본 (추가 비용 없음)
+  + Bloom        가벼움~보통 (다운샘플링)
+  + SSAO         보통~무거움 (깊이 연산)
+  + DOF          보통
+  + 여러 개 조합   누적됨
+
+  각 Pass마다 전체 화면 크기의 텍스처를 읽고 쓰므로
+  Pass 수에 비례해서 비용 증가
+</pre>
+        </div>
+
+        <div class="note">
+          모바일이나 저사양에서는 Bloom 하나만으로도 FPS가 떨어질 수 있습니다.
+          <code>EffectComposer</code> 생성 시 해상도를 낮추거나(
+          <code>renderer.getPixelRatio()</code>),
+          Bloom의 resolution을 줄이는 것이 효과적입니다.
+        </div>
+
+        <h2>OutputPass — 왜 마지막에 필요한가?</h2>
+        <p>포스트프로세싱 파이프라인은 <strong>리니어 색공간</strong>에서 작업합니다.
+           <code>OutputPass</code>가 최종적으로 톤매핑과 sRGB 변환을 적용하여
+           화면에 올바른 색이 표시되도록 합니다.</p>
+<pre><code>// 마지막에 반드시 추가
+composer.addPass(new OutputPass())</code></pre>
+        <p>이것을 빠뜨리면 색이 너무 밝거나 씻겨 보입니다.</p>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: import</h3>
+<pre><code>import { EffectComposer } from
+  'three/examples/jsm/postprocessing/EffectComposer.js'
+import { RenderPass } from
+  'three/examples/jsm/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from
+  'three/examples/jsm/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from
+  'three/examples/jsm/postprocessing/OutputPass.js'
+import { GlitchPass } from
+  'three/examples/jsm/postprocessing/GlitchPass.js'
+import { ShaderPass } from
+  'three/examples/jsm/postprocessing/ShaderPass.js'
+import { RGBShiftShader } from
+  'three/examples/jsm/shaders/RGBShiftShader.js'</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: Composer 구성</h3>
+<pre><code>const composer = new EffectComposer(renderer)
+
+// 1. 씬 렌더링
+composer.addPass(new RenderPass(scene, camera))
+
+// 2. Bloom
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(width, height),
+  0.8,   // strength
+  0.4,   // radius
+  0.85   // threshold
+)
+composer.addPass(bloomPass)
+
+// 3~N. 추가 효과들
+composer.addPass(new GlitchPass())
+
+// 마지막. OutputPass
+composer.addPass(new OutputPass())</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 발광 오브젝트</h3>
+<pre><code>// emissive + 높은 emissiveIntensity = bloom 대상
+const neonMat = new THREE.MeshStandardMaterial({
+  color: 0x111111,         // 기본 색 (어둡게)
+  emissive: 0xff0088,      // 발광 색
+  emissiveIntensity: 2,    // 발광 강도
+})
+
+// threshold보다 밝은 부분만 bloom
+// emissiveIntensity가 높을수록 확실하게 bloom</code></pre>
+          <p>일반 오브젝트(emissive 없음)는 bloom의 영향을 받지 않습니다.
+             캔버스에서 회색 큐브는 bloom이 없고, 네온 오브젝트만 빛납니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 렌더 루프 변경</h3>
+<pre><code>function animate() {
+  requestAnimationFrame(animate)
+
+  controls.update()
+
+  // renderer.render(scene, camera) ← 이전
+  composer.render()  // ← 포스트프로세싱 사용 시
+}
+animate()</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 리사이즈 처리</h3>
+<pre><code>function resize() {
+  const w = canvas.parentElement!.clientWidth
+  const h = canvas.parentElement!.clientHeight
+  renderer.setSize(w, h)
+  camera.aspect = w / h
+  camera.updateProjectionMatrix()
+
+  // composer도 리사이즈!
+  composer.setSize(w, h)
+  // 또는 composer를 재생성
+}</code></pre>
+          <p>리사이즈 시 <code>composer.setSize()</code>를 호출하지 않으면
+             출력 해상도가 맞지 않아 화면이 흐려지거나 찌그러집니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: Pass 런타임 제어</h3>
+<pre><code>// Pass 활성화/비활성화
+bloomPass.enabled = false  // bloom 끄기
+
+// 파라미터 실시간 변경
+bloomPass.strength = 1.5
+bloomPass.radius = 0.6
+bloomPass.threshold = 0.5
+
+// ShaderPass uniform 변경
+rgbShiftPass.uniforms['amount'].value = 0.005</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

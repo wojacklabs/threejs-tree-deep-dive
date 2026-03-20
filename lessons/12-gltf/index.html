@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>12 - GLTF 모델 로딩 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .controls-bar button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .controls-bar button:hover { background: #21262d; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .progress-container {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 200px;
+      z-index: 20;
+      text-align: center;
+    }
+    .progress-track {
+      width: 100%;
+      height: 4px;
+      background: #30363d;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: #58a6ff;
+      width: 0%;
+      transition: width 0.1s;
+    }
+    .progress-text {
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      color: #8b949e;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/11-raycasting/">← 이전</a>
+    <h1>12. GLTF 모델 로딩</h1>
+    <a href="/lessons/13-model-animation/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="model-info"></div>
+      <div class="progress-container">
+        <span class="progress-text" id="progress-text">Loading...</span>
+        <div class="progress-track">
+          <div class="progress-fill" id="progress-bar"></div>
+        </div>
+      </div>
+      <div class="controls-bar">
+        <button id="btn-wireframe">Wireframe: OFF</button>
+        <button id="btn-normals">Normal View: OFF</button>
+        <button id="btn-rotate">Rotate: OFF</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>왜 GLTF인가?</h2>
+        <p>3D 모델 포맷은 다양하지만(OBJ, FBX, Collada 등),
+           <strong>glTF(GL Transmission Format)</strong>가 웹 3D의 표준입니다:</p>
+        <div class="diagram">
+<pre>
+  포맷      장점                      단점
+  ──────────────────────────────────────────
+  glTF/GLB  웹 표준, 작은 크기,        ─
+            PBR material, 애니메이션,
+            Draco/Meshopt 압축 지원
+  OBJ       단순, 널리 지원            material 제한, 애니메이션 없음
+  FBX       Blender/Unity 호환         파일 큼, 파싱 복잡
+</pre>
+        </div>
+        <p><code>.gltf</code>는 JSON + 별도 바이너리/텍스처 파일,
+           <code>.glb</code>는 모든 것이 하나로 합쳐진 바이너리 포맷입니다.
+           웹에서는 <strong>.glb가 추천</strong>됩니다 (파일 1개, 작은 크기).</p>
+
+        <h2>GLTFLoader</h2>
+        <p>Three.js addon으로 제공되는 GLTF 로더입니다:</p>
+<pre><code>import { GLTFLoader } from
+  'three/examples/jsm/loaders/GLTFLoader.js'
+
+const loader = new GLTFLoader()
+loader.load(
+  '/models/helmet.glb',   // 경로
+  (gltf) => { ... },      // 성공 콜백
+  (xhr) => { ... },       // 진행 콜백
+  (error) => { ... }      // 에러 콜백
+)</code></pre>
+
+        <h2>gltf 객체 구조</h2>
+        <p>콜백으로 전달되는 <code>gltf</code> 객체에는 다양한 데이터가 들어있습니다:</p>
+<pre><code>gltf.scene       // Group — 모델의 루트 (scene.add 대상)
+gltf.animations  // AnimationClip[] — 애니메이션 데이터
+gltf.cameras     // Camera[] — 모델에 포함된 카메라
+gltf.asset       // 메타데이터 (버전, 생성 도구 등)</code></pre>
+
+        <div class="note">
+          <code>gltf.scene</code>은 <code>THREE.Group</code>입니다.
+          내부에 Mesh, Light, Bone 등이 트리 구조로 들어있습니다.
+          Lesson 10에서 배운 씬 그래프가 여기서 실체화됩니다.
+        </div>
+
+        <h2>모델의 씬 그래프</h2>
+        <p>로드된 모델의 내부 구조:</p>
+        <div id="scene-tree" style="
+          background: #161b22;
+          border: 1px solid #30363d;
+          border-radius: 6px;
+          padding: 12px;
+          font-family: 'Fira Code', monospace;
+          font-size: 12px;
+          line-height: 1.6;
+          white-space: pre;
+          overflow-x: auto;
+          max-height: 200px;
+          overflow-y: auto;
+        ">로딩 중...</div>
+
+        <h2>traverse()로 모델 수정</h2>
+        <p>GLTF 모델의 모든 Mesh에 일괄 처리를 적용할 때 사용합니다:</p>
+<pre><code>model.traverse((child) => {
+  if (child instanceof THREE.Mesh) {
+    child.castShadow = true
+    child.receiveShadow = true
+    // material 수정, 교체 등
+  }
+})</code></pre>
+        <p>캔버스의 <strong>Wireframe</strong>과 <strong>Normal View</strong> 버튼이
+           traverse로 모든 Mesh의 material을 일괄 변경하는 예시입니다.</p>
+
+        <h2>모델 위치/스케일 조정</h2>
+        <p>외부 모델은 원점, 스케일, 방향이 제각각이므로 조정이 필요합니다:</p>
+<pre><code>// 위치 조정
+model.position.set(0, 0, 0)
+
+// 스케일 조정 (너무 크거나 작을 때)
+model.scale.setScalar(0.01)  // 균일 스케일
+model.scale.set(0.01, 0.01, 0.01)  // 개별 축
+
+// 회전 조정 (방향이 맞지 않을 때)
+model.rotation.y = Math.PI  // 180도 회전</code></pre>
+
+        <div class="note">
+          <strong>실무 팁:</strong> 모델이 로드 후 안 보이면 대부분 스케일 문제입니다.
+          <code>console.log(new THREE.Box3().setFromObject(model))</code>로
+          바운딩 박스를 확인하고, 씬에 맞게 스케일을 조정하세요.
+        </div>
+
+        <h2>Draco 압축</h2>
+        <p>Draco는 geometry 데이터를 <strong>60~90% 압축</strong>하는 Google 라이브러리입니다:</p>
+<pre><code>import { DRACOLoader } from
+  'three/examples/jsm/loaders/DRACOLoader.js'
+
+const dracoLoader = new DRACOLoader()
+dracoLoader.setDecoderPath('/draco/')
+// Draco WASM 디코더 경로
+
+const gltfLoader = new GLTFLoader()
+gltfLoader.setDRACOLoader(dracoLoader)
+// GLTFLoader에 Draco 디코더 연결</code></pre>
+        <p>Draco 압축된 GLB는 파일 크기가 크게 줄어들어
+           로딩 시간이 단축됩니다. 대규모 모델에서 특히 효과적입니다.</p>
+
+        <h2>무료 3D 모델 소스</h2>
+        <ul>
+          <li><strong>Sketchfab</strong> — 가장 큰 3D 모델 라이브러리 (glTF 다운로드 지원)</li>
+          <li><strong>Poly Haven</strong> — CC0 무료 모델/텍스처/HDR</li>
+          <li><strong>glTF Sample Models</strong> — 테스트용 공식 샘플</li>
+          <li><strong>Mixamo</strong> — 무료 캐릭터 + 애니메이션</li>
+        </ul>
+
+        <h2>renderer.info</h2>
+        <p>캔버스 왼쪽 상단에 표시되는 모델 정보(mesh 수, vertex 수, triangle 수)는
+           <code>renderer.info</code>에서도 확인할 수 있습니다:</p>
+<pre><code>console.log(renderer.info.render)
+// { calls, triangles, points, lines, frame }</code></pre>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: GLTFLoader import</h3>
+<pre><code>import { GLTFLoader } from
+  'three/examples/jsm/loaders/GLTFLoader.js'
+
+const loader = new GLTFLoader()</code></pre>
+          <p>Three.js 코어가 아닌 <code>examples/jsm</code>에서 import합니다.
+             OrbitControls와 같은 경로 패턴입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 모델 로드</h3>
+<pre><code>loader.load(
+  '/models/DamagedHelmet.glb',
+
+  // onLoad — 로딩 완료
+  (gltf) => {
+    const model = gltf.scene
+    model.position.set(0, 0.8, 0)
+    scene.add(model)  // 씬에 추가
+  },
+
+  // onProgress — 로딩 중
+  (xhr) => {
+    if (xhr.lengthComputable) {
+      const percent = (xhr.loaded / xhr.total) * 100
+      progressBar.style.width = `${percent}%`
+    }
+  },
+
+  // onError — 실패
+  (error) => {
+    console.error('Load error:', error)
+  }
+)</code></pre>
+          <p><code>load()</code>는 비동기입니다. 모델이 로드되기 전에
+             렌더 루프는 이미 돌고 있으므로, 씬에 추가되면 자동으로 표시됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 그림자 일괄 설정</h3>
+<pre><code>model.traverse((child) => {
+  if (child instanceof THREE.Mesh) {
+    child.castShadow = true
+    child.receiveShadow = true
+  }
+})</code></pre>
+          <p>GLTF 모델은 기본적으로 그림자가 꺼져 있습니다.
+             traverse로 모든 Mesh에 일괄 설정합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 모델 정보 수집</h3>
+<pre><code>let meshCount = 0
+let vertexCount = 0
+let triangleCount = 0
+
+model.traverse((child) => {
+  if (child instanceof THREE.Mesh) {
+    meshCount++
+    const geo = child.geometry
+    vertexCount += geo.attributes.position.count
+
+    if (geo.index) {
+      triangleCount += geo.index.count / 3
+    } else {
+      triangleCount += geo.attributes.position.count / 3
+    }
+  }
+})</code></pre>
+          <p>indexed geometry는 <code>geo.index.count / 3</code>,
+             non-indexed는 <code>position.count / 3</code>으로 삼각형 수를 계산합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: Material 교체 (디버깅)</h3>
+<pre><code>// Wireframe 토글
+model.traverse((child) => {
+  if (child instanceof THREE.Mesh) {
+    const mat = child.material as THREE.MeshStandardMaterial
+    mat.wireframe = !mat.wireframe
+  }
+})
+
+// NormalMaterial로 교체 (원본 저장)
+model.traverse((child) => {
+  if (child instanceof THREE.Mesh) {
+    child.userData.originalMaterial = child.material
+    child.material = new THREE.MeshNormalMaterial()
+  }
+})
+
+// 원본 복원
+model.traverse((child) => {
+  if (child instanceof THREE.Mesh) {
+    if (child.userData.originalMaterial) {
+      child.material = child.userData.originalMaterial
+    }
+  }
+})</code></pre>
+          <p><code>userData</code>는 임의 데이터를 저장할 수 있는 빈 객체입니다.
+             원본 material을 임시 저장하는 데 유용합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: Draco 압축 지원 (선택)</h3>
+<pre><code>import { DRACOLoader } from
+  'three/examples/jsm/loaders/DRACOLoader.js'
+
+const dracoLoader = new DRACOLoader()
+// CDN에서 디코더 로드
+dracoLoader.setDecoderPath(
+  'https://www.gstatic.com/draco/versioned/decoders/1.5.6/'
+)
+
+const gltfLoader = new GLTFLoader()
+gltfLoader.setDRACOLoader(dracoLoader)
+// 이후 동일하게 load() 호출</code></pre>
+          <p>Draco 디코더는 WASM 기반이며, CDN에서 로드하면 별도 설치가 불필요합니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>05 - OrbitControls | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .controls-bar button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .controls-bar button:hover { background: #21262d; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      gap: 16px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.7);
+      padding: 6px 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/04-camera/">← 이전</a>
+    <h1>05. OrbitControls</h1>
+    <a href="/lessons/06-light/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+      <div class="controls-bar">
+        <button id="btn-reset">Reset</button>
+        <button id="btn-auto">Auto Rotate: OFF</button>
+        <button id="btn-target">Random Target</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>OrbitControls란?</h2>
+        <p>Three.js 코어에는 포함되지 않지만, 공식 addon으로 제공되는
+           <strong>카메라 컨트롤러</strong>입니다.
+           마우스/터치로 카메라를 직관적으로 조작할 수 있게 해줍니다.</p>
+<pre><code>import { OrbitControls } from
+  'three/examples/jsm/controls/OrbitControls.js'
+
+const controls = new OrbitControls(camera, canvas)
+// camera: 조작할 카메라
+// canvas: 이벤트를 받을 DOM 요소</code></pre>
+
+        <h2>기본 조작</h2>
+        <p>지금 바로 캔버스에서 시도해보세요:</p>
+        <ul>
+          <li><strong>좌클릭 드래그</strong> — 회전 (orbit)</li>
+          <li><strong>우클릭 드래그</strong> — 이동 (pan)</li>
+          <li><strong>스크롤</strong> — 줌 (dolly)</li>
+          <li><strong>가운데 클릭 드래그</strong> — 이동 (pan)</li>
+        </ul>
+        <p>캔버스 왼쪽 상단에 현재 <em>distance</em>(거리),
+           <em>polar</em>(수직각), <em>azimuth</em>(수평각)가 표시됩니다.
+           조작하면서 값이 변하는 것을 확인해보세요.</p>
+
+        <h2>controls.target</h2>
+        <p>OrbitControls의 핵심 개념입니다.
+           카메라가 <strong>어디를 중심으로 회전하는지</strong>를 결정합니다:</p>
+        <div class="diagram">
+<pre>
+           카메라
+            ╲│╱
+             ●  ← camera.position
+             │
+             │  distance (거리)
+             │
+             ○  ← controls.target (회전 중심)
+</pre>
+        </div>
+        <p>기본값은 <code>(0, 0, 0)</code>이며, 캔버스의 노란 구체가 target 위치입니다.</p>
+        <p><strong>Random Target</strong> 버튼을 눌러 target을 다른 오브젝트로 바꿔보세요.
+           회전 중심이 바뀌는 것을 체감할 수 있습니다.</p>
+
+        <div class="note">
+          <code>controls.target</code>은 <code>camera.lookAt()</code>을 대체합니다.
+          OrbitControls 사용 시 <code>lookAt</code>을 직접 호출하면 충돌합니다.
+          target을 바꾸면 자동으로 lookAt이 갱신됩니다.
+        </div>
+
+        <h2>Damping (관성)</h2>
+        <p>드래그를 놓았을 때 <strong>부드럽게 멈추는</strong> 효과입니다:</p>
+<pre><code>controls.enableDamping = true
+controls.dampingFactor = 0.08  // 0~1, 낮을수록 부드러움</code></pre>
+        <p>이 효과를 적용하려면 <strong>매 프레임 <code>controls.update()</code></strong>를 호출해야 합니다.
+           호출하지 않으면 damping이 동작하지 않습니다.</p>
+
+        <h2>제한 설정</h2>
+        <p>사용자가 카메라를 너무 가까이/멀리, 또는 바닥 아래로 보내는 것을 방지할 수 있습니다:</p>
+
+        <p><strong>줌 제한:</strong></p>
+<pre><code>controls.minDistance = 2    // 최소 거리
+controls.maxDistance = 20   // 최대 거리</code></pre>
+
+        <p><strong>수직 각도 제한:</strong></p>
+<pre><code>// polar angle: 0=위에서 내려다봄, π=아래에서 올려다봄
+controls.minPolarAngle = 0
+controls.maxPolarAngle = Math.PI * 0.85  // 바닥 아래 방지</code></pre>
+        <div class="diagram">
+<pre>
+  polar = 0       polar = π/2      polar = π
+  (위에서)         (수평)            (아래에서)
+
+    👁               👁
+    │             ───●───           │
+    ▼                               ▲
+    ●                               ●
+                                    👁
+</pre>
+        </div>
+
+        <p><strong>수평 각도 제한:</strong></p>
+<pre><code>// 특정 방향으로만 회전 허용 (건축 시각화 등)
+controls.minAzimuthAngle = -Math.PI / 4  // -45°
+controls.maxAzimuthAngle = Math.PI / 4   // +45°</code></pre>
+
+        <h2>자동 회전</h2>
+        <p>사용자 조작이 없을 때 카메라가 자동으로 회전합니다:</p>
+<pre><code>controls.autoRotate = true
+controls.autoRotateSpeed = 2.0  // 기본값 2.0</code></pre>
+        <p>캔버스의 <strong>Auto Rotate</strong> 버튼으로 켜고 끌 수 있습니다.
+           제품 전시, 쇼케이스 등에서 많이 사용됩니다.</p>
+
+        <h2>기능 비활성화</h2>
+        <p>특정 조작을 막을 수 있습니다:</p>
+<pre><code>controls.enableRotate = false  // 회전 비활성화
+controls.enableZoom = false    // 줌 비활성화
+controls.enablePan = false     // 이동 비활성화
+controls.enabled = false       // 전체 비활성화</code></pre>
+        <p>예: 제품 뷰어에서 pan을 막아 오브젝트가 화면 밖으로 이동하지 않게.</p>
+
+        <h2>reset()</h2>
+        <p><code>controls.reset()</code>은 카메라를 <strong>초기 위치/방향</strong>으로 되돌립니다.
+           OrbitControls 생성 시점의 상태가 기록됩니다.</p>
+        <p>캔버스의 <strong>Reset</strong> 버튼으로 확인해보세요.</p>
+
+        <h2>다른 컨트롤러들</h2>
+        <p>OrbitControls 외에도 목적에 따라 다른 컨트롤러를 사용합니다:</p>
+        <ul>
+          <li><code>FlyControls</code> — 비행 시뮬레이터 방식 (6자유도)</li>
+          <li><code>PointerLockControls</code> — FPS 게임 방식 (마우스 잠금)</li>
+          <li><code>TrackballControls</code> — OrbitControls와 유사하나 수직 제한 없음</li>
+          <li><code>MapControls</code> — 지도 앱 방식 (좌클릭=pan, 우클릭=회전)</li>
+          <li><code>DragControls</code> — 오브젝트를 드래그로 이동</li>
+        </ul>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: import와 생성</h3>
+<pre><code>import { OrbitControls } from
+  'three/examples/jsm/controls/OrbitControls.js'
+
+const controls = new OrbitControls(camera, canvas)
+// camera: PerspectiveCamera 인스턴스
+// canvas: &lt;canvas&gt; DOM 요소 (이벤트 리스너 대상)</code></pre>
+          <p>두 번째 인자가 <code>renderer.domElement</code>가 아니라
+             직접 <code>canvas</code>를 넘기는 점에 주의하세요.
+             Vite에서는 canvas를 직접 HTML에 만들어두므로 동일합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 옵션 설정</h3>
+<pre><code>// 관성 효과
+controls.enableDamping = true
+controls.dampingFactor = 0.08
+
+// 줌 범위 제한
+controls.minDistance = 2
+controls.maxDistance = 20
+
+// 바닥 아래로 못 가게
+controls.maxPolarAngle = Math.PI * 0.85
+
+// 자동 회전 (기본 off)
+controls.autoRotate = false
+controls.autoRotateSpeed = 2.0</code></pre>
+          <p>생성 직후에 옵션을 설정합니다.
+             <code>dampingFactor</code>가 낮을수록 더 부드럽게(느리게) 멈춥니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 렌더 루프에서 update()</h3>
+<pre><code>function animate() {
+  requestAnimationFrame(animate)
+
+  controls.update()  // ← 필수! damping/autoRotate에 필요
+  renderer.render(scene, camera)
+}
+animate()</code></pre>
+          <p><code>controls.update()</code>를 빠뜨리면:</p>
+          <ul>
+            <li>damping이 동작하지 않음 (즉시 멈춤)</li>
+            <li>autoRotate가 동작하지 않음</li>
+          </ul>
+          <p>damping이나 autoRotate를 사용하지 않으면 update()를 생략해도 되지만,
+             항상 호출하는 습관을 들이는 것이 좋습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: target 변경</h3>
+<pre><code>// target을 특정 오브젝트 위치로 변경
+controls.target.copy(someObject.position)
+// 이후 자동으로 카메라가 해당 위치를 중심으로 회전
+
+// 또는 직접 좌표 지정
+controls.target.set(2, 0, -1)</code></pre>
+          <p>target을 바꾸면 카메라의 lookAt 방향이 자동으로 갱신됩니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 상태 정보 읽기</h3>
+<pre><code>// 카메라와 target 사이의 거리
+const dist = camera.position.distanceTo(controls.target)
+
+// 수직 각도 (0=위에서, π/2=수평, π=아래에서)
+const polar = controls.getPolarAngle()
+
+// 수평 각도 (-π ~ π)
+const azimuth = controls.getAzimuthalAngle()</code></pre>
+          <p>캔버스 왼쪽 상단 info bar에 이 값들을 실시간 표시하고 있습니다.
+             조작하면서 값의 변화를 확인해보세요.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 버튼 이벤트</h3>
+<pre><code>// 초기 상태로 복원
+document.getElementById('btn-reset')
+  ?.addEventListener('click', () => {
+    controls.reset()
+  })
+
+// 자동 회전 토글
+document.getElementById('btn-auto')
+  ?.addEventListener('click', () => {
+    controls.autoRotate = !controls.autoRotate
+  })
+
+// target을 랜덤 오브젝트로 변경
+document.getElementById('btn-target')
+  ?.addEventListener('click', () => {
+    const obj = objects[Math.floor(Math.random() * objects.length)]
+    controls.target.copy(obj.position)
+  })</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>리사이즈 패턴 (반복)</h3>
+<pre><code>function resize() {
+  const parent = canvas.parentElement!
+  const w = parent.clientWidth
+  const h = parent.clientHeight
+  renderer.setSize(w, h)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  camera.aspect = w / h
+  camera.updateProjectionMatrix()
+}
+window.addEventListener('resize', resize)
+resize()</code></pre>
+          <p>Lesson 01부터 반복되는 패턴입니다.
+             이 코드는 이후 모든 레슨에 포함됩니다.
+             OrbitControls에는 별도의 리사이즈 처리가 필요 없습니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

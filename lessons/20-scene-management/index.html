@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>20 - 대규모 씬 관리 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .loading-screen {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #0d1117;
+      z-index: 100;
+      transition: opacity 0.5s;
+      gap: 12px;
+    }
+    .loading-track {
+      width: 200px;
+      height: 4px;
+      background: #30363d;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .loading-fill {
+      height: 100%;
+      background: #58a6ff;
+      width: 0%;
+      transition: width 0.15s;
+    }
+    .loading-text {
+      font-family: 'Fira Code', monospace;
+      font-size: 13px;
+      color: #8b949e;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/19-procedural/">← 이전</a>
+    <h1>20. 대규모 씬 관리</h1>
+    <a href="/lessons/21-final/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+      <div class="loading-screen" id="loading-screen">
+        <span class="loading-text" id="loading-text">Loading...</span>
+        <div class="loading-track">
+          <div class="loading-fill" id="loading-bar"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>왜 구조화가 필요한가?</h2>
+        <p>지금까지의 레슨은 모든 코드를 <strong>하나의 파일</strong>에 작성했습니다.
+           실제 프로젝트에서는 씬이 커지면 관리가 불가능해집니다.</p>
+        <div class="diagram">
+<pre>
+  소규모 데모:          대규모 프로젝트:
+  main.ts (300줄)      src/
+                       ├── main.ts (진입점)
+                       ├── World.ts (씬 관리)
+                       ├── rooms/
+                       │   ├── Room.ts (방 클래스)
+                       │   ├── RedRoom.ts
+                       │   └── BlueRoom.ts
+                       ├── loaders/
+                       │   └── AssetManager.ts
+                       └── utils/
+                           └── dispose.ts
+</pre>
+        </div>
+
+        <h2>클래스로 씬 분리</h2>
+        <p>이 레슨에서는 <code>Room</code> 클래스로 각 방을 독립적으로 관리합니다:</p>
+<pre><code>class Room {
+  group: THREE.Group
+  private meshes: THREE.Mesh[] = []
+
+  constructor(name, position, size, color) {
+    this.group = new THREE.Group()
+    this.build()
+  }
+
+  build() { /* mesh 생성 */ }
+  update(t) { /* 애니메이션 */ }
+  dispose() { /* 리소스 해제 */ }
+}</code></pre>
+        <p>각 방이 자신의 mesh, light, 애니메이션을 관리합니다.
+           방을 추가/제거할 때 다른 코드에 영향이 없습니다.</p>
+
+        <h2>LoadingManager</h2>
+        <p>여러 리소스(모델, 텍스처 등)의 로딩을 <strong>한 곳에서</strong> 관리합니다:</p>
+<pre><code>const manager = new THREE.LoadingManager()
+
+manager.onStart = (url, loaded, total) => {
+  showLoadingScreen()
+}
+manager.onProgress = (url, loaded, total) => {
+  updateProgressBar(loaded / total)
+}
+manager.onLoad = () => {
+  hideLoadingScreen()
+}
+manager.onError = (url) => {
+  showError(url)
+}
+
+// 모든 로더에 manager 연결
+const texLoader = new THREE.TextureLoader(manager)
+const gltfLoader = new GLTFLoader(manager)
+// → 모든 로딩이 끝나면 onLoad 호출</code></pre>
+        <p>캔버스의 로딩 화면이 이 패턴입니다.
+           모든 리소스가 로드되면 자동으로 사라집니다.</p>
+
+        <div class="note">
+          <code>LoadingManager</code>를 사용하지 않으면 각 리소스마다 개별적으로
+          로딩 상태를 추적해야 합니다. manager가 전체 진행률을 자동 계산합니다.
+        </div>
+
+        <h2>dispose() — 메모리 해제</h2>
+        <p>Three.js에서 가장 흔한 버그는 <strong>메모리 누수</strong>입니다.
+           씬에서 <code>remove()</code>만 하면 GPU 메모리에 남아있습니다:</p>
+<pre><code>// ✗ 메모리 누수!
+scene.remove(mesh)  // 씬에서만 제거, GPU에 남아있음
+
+// ✓ 올바른 해제
+mesh.geometry.dispose()    // geometry 해제
+mesh.material.dispose()    // material 해제
+// material에 텍스처가 있으면:
+mesh.material.map?.dispose()
+mesh.material.normalMap?.dispose()
+scene.remove(mesh)         // 씬에서 제거</code></pre>
+
+        <p>lil-gui에서 <strong>Dispose Red Room</strong>을 클릭하고
+           info bar의 <code>geometries</code> 수가 줄어드는 것을 확인하세요.</p>
+
+        <div class="note">
+          <code>renderer.info.memory</code>로 현재 GPU에 있는
+          geometry/texture 수를 확인할 수 있습니다.
+          dispose 전후를 비교하면 누수를 감지할 수 있습니다.
+        </div>
+
+        <h2>dispose 체크리스트</h2>
+        <div class="diagram">
+<pre>
+  리소스              dispose 방법
+  ───────────────────────────────────
+  BufferGeometry     geometry.dispose()
+  Material           material.dispose()
+  Texture            texture.dispose()
+  RenderTarget       renderTarget.dispose()
+  Shadow Map         light.shadow.map.dispose()
+  EffectComposer     각 pass의 dispose()
+  OrbitControls      controls.dispose()
+  EventListener      removeEventListener()
+</pre>
+        </div>
+
+        <h2>visible vs dispose</h2>
+<pre><code>// 잠시 숨기기 (나중에 다시 보일 것)
+mesh.visible = false
+// GPU 메모리 유지, 즉시 복원 가능
+
+// 영구 제거 (다시 안 씀)
+mesh.geometry.dispose()
+mesh.material.dispose()
+scene.remove(mesh)
+// GPU 메모리 해제, 복원 불가</code></pre>
+        <p>lil-gui의 <strong>Rooms</strong> 폴더는 <code>visible</code> 토글 (메모리 유지),
+           <strong>Memory</strong> 폴더의 Dispose는 완전 해제입니다.</p>
+
+        <h2>renderer.info</h2>
+        <p>렌더링 상태를 모니터링하는 핵심 도구입니다:</p>
+<pre><code>renderer.info.render.calls      // draw call 수
+renderer.info.render.triangles  // 삼각형 수
+renderer.info.memory.geometries // GPU geometry 수
+renderer.info.memory.textures   // GPU 텍스처 수</code></pre>
+        <p>info bar에서 이 값들을 실시간으로 확인할 수 있습니다.
+           방을 dispose하면 geometries가 줄어드는 것을 관찰하세요.</p>
+
+        <h2>코드 구조화 패턴</h2>
+        <div class="diagram">
+<pre>
+  패턴             설명
+  ────────────────────────────────────────
+  컴포넌트 클래스   Room, Character, Vehicle 등
+                   각 클래스가 build/update/dispose 담당
+
+  AssetManager     리소스 캐싱, 중복 로드 방지
+                   같은 모델을 여러 번 쓸 때 한 번만 로드
+
+  SceneManager     씬 전환, 방 로딩/언로딩
+                   활성 방만 메모리에 유지
+
+  EventBus         컴포넌트 간 통신
+                   직접 참조 대신 이벤트로 느슨한 결합
+</pre>
+        </div>
+
+        <h2>거리 기반 단계별 전략</h2>
+        <p><code>visible</code>과 <code>dispose</code>는 양자택일이 아니라
+           <strong>거리에 따라 단계적으로</strong> 적용합니다:</p>
+        <div class="diagram">
+<pre>
+  거리        전략               메모리     복원 비용
+  ───────────────────────────────────────────────
+  ~근처       visible = true     유지       즉시
+  ~중거리     visible = false    유지       즉시
+  ~원거리     LOD 저폴리 교체    일부 해제   빠름
+  ~매우 멀리  dispose            완전 해제   재로드 (수 초)
+</pre>
+        </div>
+<pre><code>function updateByDistance(house, playerPos) {
+  const dist = house.position.distanceTo(playerPos)
+
+  if (dist < 20)       // 근처: 풀 디테일
+    house.interior.visible = true
+  else if (dist < 50)  // 중거리: 내부 숨김
+    house.interior.visible = false
+  else if (dist < 100) // 원거리: 저폴리만
+    house.setLOD('low')
+  else                 // 매우 멀리: 해제
+    house.dispose()
+}</code></pre>
+        <p>다시 돌아올 가능성이 높으면 <code>visible</code>,
+           확실히 안 돌아오면 <code>dispose</code>가 원칙입니다.
+           <code>visible = false</code>는 렌더링을 안 하지만
+           <strong>GPU 메모리는 여전히 차지</strong>하므로,
+           모든 것을 숨기기만 하면 메모리가 부족해집니다.</p>
+
+        <h2>오픈월드 + 건물 내부 분리</h2>
+        <p>실제 게임에서 매우 흔한 패턴입니다. 두 가지 접근법:</p>
+        <div class="diagram">
+<pre>
+  방식 1: 동적 로드 (GTA 방식)
+  문에 다가가면 → 백그라운드 로드 → 끊김 없이 진입
+  장점: 심리스   단점: 구현 복잡
+
+  방식 2: 씬 교체 (스카이림 방식)
+  문을 열면 → 로딩 화면 → 다른 씬으로 전환
+  장점: 간단, 메모리 분리   단점: 로딩 화면
+</pre>
+        </div>
+<pre><code>// 방식 2: 씬 교체
+const worldScene = new THREE.Scene()  // 오픈월드
+const houseScene = new THREE.Scene()  // 집 내부
+let activeScene = worldScene
+
+function enterHouse() { activeScene = houseScene }
+function exitHouse()  { activeScene = worldScene }
+
+// 렌더 루프 — 활성 씬만 렌더링
+renderer.render(activeScene, camera)</code></pre>
+        <p>핵심은 <strong>"보이지 않는 것의 리소스를 해제하여
+           보이는 것에 집중"</strong>하는 것입니다.
+           씬 분리는 기기 성능을 늘리는 게 아니라,
+           한정된 성능을 필요한 곳에만 집중시킵니다.</p>
+
+        <h2>대규모 씬 최적화 요약</h2>
+        <ul>
+          <li><strong>거리 기반 전략</strong> — visible → LOD → dispose 단계적 적용</li>
+          <li><strong>LoadingManager</strong> — 로딩 화면, 진행률 표시</li>
+          <li><strong>renderer.info</strong> — 메모리/draw call 모니터링</li>
+          <li><strong>클래스 분리</strong> — 각 단위가 자기 리소스 관리</li>
+          <li><strong>씬 분리/교체</strong> — 오픈월드+건물 등 독립 공간</li>
+          <li>Lesson 17의 <strong>InstancedMesh, LOD</strong>와 조합</li>
+        </ul>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: LoadingManager</h3>
+<pre><code>const manager = new THREE.LoadingManager()
+
+manager.onStart = (url, loaded, total) => {
+  loadingScreen.style.display = 'flex'
+}
+manager.onProgress = (url, loaded, total) => {
+  const progress = loaded / total
+  loadingBar.style.width = `${progress * 100}%`
+  loadingText.textContent =
+    `Loading... ${loaded}/${total}`
+}
+manager.onLoad = () => {
+  // 페이드아웃
+  loadingScreen.style.opacity = '0'
+  setTimeout(() => {
+    loadingScreen.style.display = 'none'
+  }, 500)
+}
+
+// 모든 로더에 연결
+const texLoader = new THREE.TextureLoader(manager)
+const gltfLoader = new GLTFLoader(manager)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: Room 클래스</h3>
+<pre><code>class Room {
+  group: THREE.Group
+  private meshes: THREE.Mesh[] = []
+  private lights: THREE.Light[] = []
+  private disposed = false
+
+  constructor(name, position, size, color) {
+    this.group = new THREE.Group()
+    this.group.position.copy(position)
+    this.build()
+  }
+
+  private createMesh(geo, mat): THREE.Mesh {
+    const mesh = new THREE.Mesh(geo, mat)
+    this.group.add(mesh)
+    this.meshes.push(mesh)  // 추적
+    return mesh
+  }
+
+  build() {
+    // 바닥, 벽, 오브젝트, 조명 생성
+    // createMesh로 생성 → meshes 배열에 자동 추적
+  }
+
+  update(t: number) {
+    // 매 프레임 애니메이션
+  }
+
+  dispose() {
+    if (this.disposed) return
+    this.disposed = true
+    for (const mesh of this.meshes) {
+      mesh.geometry.dispose()
+      mesh.material.dispose()
+    }
+    for (const light of this.lights) {
+      light.shadow?.map?.dispose()
+    }
+    this.meshes.length = 0
+  }
+}</code></pre>
+          <p><code>disposed</code> 플래그로 중복 dispose를 방지합니다.
+             <code>meshes</code> 배열로 생성한 리소스를 추적하여 빠짐없이 해제합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 방 생성/관리</h3>
+<pre><code>const rooms: Room[] = []
+
+const configs = [
+  { name: 'Red', pos: new THREE.Vector3(-6,0,0), color: 0x442222 },
+  { name: 'Blue', pos: new THREE.Vector3(0,0,0), color: 0x222244 },
+  { name: 'Green', pos: new THREE.Vector3(6,0,0), color: 0x224422 },
+]
+
+for (const config of configs) {
+  const room = new Room(config.name, config.pos, size, config.color)
+  rooms.push(room)
+  scene.add(room.group)
+}
+
+// 렌더 루프
+function animate() {
+  rooms.forEach(room => room?.update(t))
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: dispose로 방 제거</h3>
+<pre><code>function disposeRoom(index: number) {
+  const room = rooms[index]
+  if (!room) return
+
+  room.dispose()            // geometry/material 해제
+  scene.remove(room.group)  // 씬에서 제거
+  rooms[index] = null       // 참조 해제
+
+  // renderer.info.memory.geometries가 줄어든 것 확인
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: visible 토글 vs dispose</h3>
+<pre><code>// GUI에서 visible 토글 — 메모리 유지
+gui.add(roomVisibility, room.name)
+  .onChange((v: boolean) => {
+    room.group.visible = v
+    // GPU 메모리 유지, 렌더링만 스킵
+  })
+
+// GUI에서 dispose — 메모리 해제
+gui.add(memActions, 'disposeRedRoom')
+  // geometry/material/shadow 모두 해제
+  // 복원 불가</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 메모리 모니터링</h3>
+<pre><code>function updateMemoryInfo() {
+  const mem = renderer.info.memory
+  const render = renderer.info.render
+
+  console.log('geometries:', mem.geometries)
+  console.log('textures:', mem.textures)
+  console.log('draw calls:', render.calls)
+  console.log('triangles:', render.triangles)
+}
+
+// 또는 info bar에 실시간 표시
+infoDiv.innerHTML = `
+  geometries: ${mem.geometries}
+  textures: ${mem.textures}
+`</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

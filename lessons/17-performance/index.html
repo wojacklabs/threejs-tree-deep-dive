@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>17 - 성능 최적화 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+    .mode-btn {
+      padding: 8px 16px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #8b949e;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .mode-btn:hover { background: #21262d; }
+    .mode-btn.active { background: #1a3050; border-color: #58a6ff; color: #e6edf3; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.85);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/16-shaders/">← 이전</a>
+    <h1>17. 성능 최적화</h1>
+    <a href="#">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+      <div class="controls-bar">
+        <button class="mode-btn" id="btn-individual" data-mode="individual">Individual (2000 Mesh)</button>
+        <button class="mode-btn" id="btn-instanced" data-mode="instanced">InstancedMesh</button>
+        <button class="mode-btn" id="btn-merged" data-mode="merged">Merged Geometry</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>성능의 핵심: Draw Call</h2>
+        <p>GPU 자체는 빠릅니다. 병목은 대부분 <strong>CPU→GPU 사이의 통신</strong>,
+           즉 <em>draw call</em>입니다.</p>
+        <div class="diagram">
+<pre>
+  Draw Call = CPU가 GPU에게 "이거 그려" 명령 1회
+
+  Mesh 2000개 (개별):
+    CPU: "1번 그려" "2번 그려" ... "2000번 그려"
+    = draw call 2000회 (CPU 병목!)
+
+  InstancedMesh 1개:
+    CPU: "이 geometry를 2000번 반복해서 그려"
+    = draw call 1회
+</pre>
+        </div>
+        <p>캔버스 하단 버튼으로 3가지 모드를 전환하면서
+           <strong>draw calls</strong>와 <strong>FPS</strong>를 비교해보세요.</p>
+
+        <h2>3가지 최적화 전략 비교</h2>
+        <div class="diagram">
+<pre>
+  전략           draw calls  culling     개별 제어  색상    제한
+  ────────────────────────────────────────────────────────
+  Individual     N개         ✓ 개별      ✓ 완전   ✓ 개별  느림
+  InstancedMesh  1개         ✗ 전체만    △ 행렬만  ✓ 개별  같은 geo
+  Merged         1개         ✗ 전체만    ✗ 불가   ✗ 단색  같은 mat
+</pre>
+        </div>
+        <p>InstancedMesh와 Merged는 draw call을 극적으로 줄이지만,
+           <strong>frustum culling이 개별 단위로 안 됩니다.</strong>
+           인스턴스 1개만 화면에 보여도 전체가 GPU로 전송됩니다.</p>
+
+        <h2>InstancedMesh</h2>
+        <p><strong>같은 geometry</strong>를 수천~수만 번 그릴 때 최적입니다.
+           draw call 1회로 모든 인스턴스를 렌더링합니다:</p>
+<pre><code>const mesh = new THREE.InstancedMesh(
+  geometry,  // 공유되는 형태
+  material,  // 공유되는 재질
+  count      // 인스턴스 수
+)
+
+// 각 인스턴스의 위치/회전/스케일을 행렬로 설정
+const dummy = new THREE.Object3D()
+dummy.position.set(x, y, z)
+dummy.rotation.set(rx, ry, rz)
+dummy.updateMatrix()
+mesh.setMatrixAt(i, dummy.matrix)
+
+// 인스턴스별 색상
+mesh.setColorAt(i, new THREE.Color('red'))</code></pre>
+
+        <div class="note">
+          <code>InstancedMesh</code>는 geometry와 material이 <strong>같아야</strong> 합니다.
+          다른 geometry를 섞으려면 여러 InstancedMesh가 필요합니다.
+          인스턴스별 색상은 <code>setColorAt</code>으로 가능하지만,
+          인스턴스별 다른 material은 불가능합니다.
+        </div>
+
+        <h2>InstancedMesh의 Culling 한계와 해결</h2>
+        <p>InstancedMesh는 GPU 입장에서 <strong>오브젝트 1개</strong>입니다.
+           개별 인스턴스 중 1개만 화면에 걸쳐도 전체가 렌더링됩니다.</p>
+        <p><strong>해결: 청크 분할</strong></p>
+<pre><code>// 나쁨: 10만 개를 하나에 (culling 불가)
+const mesh = new THREE.InstancedMesh(geo, mat, 100000)
+
+// 좋음: 영역별로 나눠서 각각 culling
+const chunkA = new THREE.InstancedMesh(geo, mat, 1000)
+const chunkB = new THREE.InstancedMesh(geo, mat, 1000)
+// 각 chunk의 bounding box가 작아서 culling 효과적</code></pre>
+        <p>오픈월드 숲 같은 경우 영역별로 InstancedMesh를 나누면
+           화면 밖 청크가 통째로 culling됩니다.
+           draw call은 청크 수만큼 늘지만, frustum 밖의 vertex를 GPU에 안 보내므로
+           전체적으로 더 빠릅니다.</p>
+
+        <h2>Merged Geometry</h2>
+        <p>여러 geometry를 <strong>하나로 합쳐</strong> draw call을 줄입니다:</p>
+<pre><code>import { mergeGeometries } from
+  'three/examples/jsm/utils/BufferGeometryUtils.js'
+
+const geometries = []
+for (let i = 0; i < 2000; i++) {
+  const geo = baseGeo.clone()
+  geo.translate(x, y, z)
+  geo.rotateX(rx)
+  geometries.push(geo)
+}
+
+const merged = mergeGeometries(geometries)
+const mesh = new THREE.Mesh(merged, material)
+// draw call 1회!</code></pre>
+
+        <div class="note">
+          <strong>merge의 트레이드오프:</strong>
+          draw call은 1이 되지만, 합친 후에는 개별 오브젝트를
+          이동/회전/삭제할 수 없습니다. 또한 같은 material만 가능하며,
+          거대한 하나의 mesh가 되므로 <strong>frustum culling이 안 됩니다</strong>
+          (Lesson 01에서 배운 것처럼 일부만 보여도 전체가 GPU로 전송).
+        </div>
+
+        <h2>LOD (Level of Detail)</h2>
+        <p>카메라 거리에 따라 <strong>자동으로 디테일을 전환</strong>합니다.
+           캔버스 왼쪽의 빨간 구체에 줌 인/아웃해보세요:</p>
+<pre><code>const lod = new THREE.LOD()
+
+// 가까울 때: 고폴리
+lod.addLevel(highDetailMesh, 0)
+
+// 15 이상: 중폴리
+lod.addLevel(midDetailMesh, 15)
+
+// 30 이상: 저폴리
+lod.addLevel(lowDetailMesh, 30)
+
+scene.add(lod)</code></pre>
+        <p>info bar의 <strong>LOD level</strong>이 거리에 따라 변하는 것을 확인하세요.</p>
+
+        <h2>renderer.info — 성능 측정</h2>
+        <p>현재 렌더링 상태를 확인하는 핵심 도구입니다:</p>
+<pre><code>const info = renderer.info.render
+info.calls      // draw call 수
+info.triangles  // 렌더링된 삼각형 수
+info.points     // 렌더링된 점 수
+info.lines      // 렌더링된 선 수
+
+renderer.info.memory
+  .geometries   // GPU의 geometry 수
+  .textures     // GPU의 텍스처 수</code></pre>
+
+        <h2>어디가 병목인지 파악</h2>
+        <div class="diagram">
+<pre>
+  증상                    원인              해결
+  ──────────────────────────────────────────────
+  draw calls 높음        오브젝트 수 많음   InstancedMesh, merge
+  triangles 높음         vertex 많음       LOD, 저폴리, 디시메이션
+  FPS 낮은데 calls 낮음  fragment 무거움    해상도↓, 셰이더 단순화
+  메모리 부족            텍스처 큼          KTX2 압축, 해상도↓
+</pre>
+        </div>
+
+        <div class="note">
+          <strong>CPU-bound vs GPU-bound:</strong>
+          draw call을 줄여도 FPS가 안 오르면 GPU가 병목(GPU-bound)입니다.
+          이 경우 vertex/triangle 수를 줄이는 것이 훨씬 효과적입니다.
+          반대로 vertex가 적은데 느리면 draw call이 병목(CPU-bound)입니다.
+          <code>renderer.info</code>의 calls와 triangles를 비교하여 어디가 병목인지 먼저 파악하세요.
+        </div>
+
+        <h2>기타 최적화 팁</h2>
+        <ul>
+          <li><code>renderer.setPixelRatio(Math.min(devicePixelRatio, 2))</code> — Retina에서 2 이상은 낭비</li>
+          <li><code>geometry.dispose()</code>, <code>material.dispose()</code>, <code>texture.dispose()</code> — 불필요한 리소스 해제</li>
+          <li>그림자는 필요한 오브젝트만 <code>castShadow = true</code></li>
+          <li>조명 수 최소화 (2~4개)</li>
+          <li><code>Object3D.frustumCulled = true</code> (기본값) 유지</li>
+          <li>텍스처 크기는 2의 거듭제곱 (밉맵 효율)</li>
+        </ul>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>Individual — 개별 Mesh</h3>
+<pre><code>for (let i = 0; i < 2000; i++) {
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color().setHSL(Math.random(), 0.7, 0.5),
+  })
+  const mesh = new THREE.Mesh(geo, mat)
+  mesh.position.set(...)
+  mesh.rotation.set(...)
+  scene.add(mesh)
+}
+// draw calls: ~2000 (가장 느림)</code></pre>
+          <p>각 mesh가 다른 material을 가지면 draw call이 더 늘어납니다.
+             같은 material을 공유해도 mesh 수만큼 draw call이 발생합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>InstancedMesh</h3>
+<pre><code>const instancedMesh = new THREE.InstancedMesh(
+  new THREE.BoxGeometry(0.5, 0.5, 0.5),
+  new THREE.MeshStandardMaterial({ roughness: 0.5 }),
+  2000  // 인스턴스 수
+)
+
+const dummy = new THREE.Object3D()
+const color = new THREE.Color()
+
+for (let i = 0; i < 2000; i++) {
+  // 위치/회전을 행렬로 설정
+  dummy.position.set(x, y, z)
+  dummy.rotation.set(rx, ry, rz)
+  dummy.updateMatrix()
+  instancedMesh.setMatrixAt(i, dummy.matrix)
+
+  // 인스턴스별 색상
+  instancedMesh.setColorAt(i,
+    color.setHSL(Math.random(), 0.7, 0.5)
+  )
+}
+
+// GPU에 변경 알림
+instancedMesh.instanceMatrix.needsUpdate = true
+instancedMesh.instanceColor!.needsUpdate = true
+
+scene.add(instancedMesh)
+// draw calls: 1 (가장 빠름)</code></pre>
+          <p><code>dummy.updateMatrix()</code>를 호출해야
+             position/rotation이 matrix에 반영됩니다.
+             <code>setMatrixAt</code>은 4×4 변환 행렬을 받습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>Merged Geometry</h3>
+<pre><code>import { mergeGeometries } from
+  'three/examples/jsm/utils/BufferGeometryUtils.js'
+
+const geos: THREE.BufferGeometry[] = []
+for (let i = 0; i < 2000; i++) {
+  const clone = baseGeo.clone()
+  clone.translate(x, y, z)  // geometry 자체를 이동
+  clone.rotateX(rx)
+  geos.push(clone)
+}
+
+const merged = mergeGeometries(geos)!
+const mesh = new THREE.Mesh(merged, material)
+scene.add(mesh)
+// draw calls: 1, but no individual control</code></pre>
+          <p><code>translate()</code>와 <code>rotateX()</code>는 geometry의 vertex를
+             직접 변형합니다. mesh.position과 달리 되돌릴 수 없습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>LOD</h3>
+<pre><code>const lod = new THREE.LOD()
+
+const high = new THREE.Mesh(
+  new THREE.SphereGeometry(2, 64, 32), mat
+)
+const mid = new THREE.Mesh(
+  new THREE.SphereGeometry(2, 16, 8), mat
+)
+const low = new THREE.Mesh(
+  new THREE.SphereGeometry(2, 6, 4),
+  new THREE.MeshStandardMaterial({ flatShading: true })
+)
+
+lod.addLevel(high, 0)    // 거리 0~15: 고폴리
+lod.addLevel(mid, 15)    // 거리 15~30: 중폴리
+lod.addLevel(low, 30)    // 거리 30+: 저폴리
+
+scene.add(lod)
+
+// 현재 LOD 레벨 확인
+lod.getCurrentLevel()  // 0, 1, 또는 2</code></pre>
+          <p>LOD는 자동으로 카메라 거리를 계산하여 적절한 레벨을 표시합니다.
+             렌더 루프에서 별도 코드가 필요 없습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>FPS 측정</h3>
+<pre><code>let fps = 0, frameCount = 0, lastTime = 0
+
+function animate() {
+  requestAnimationFrame(animate)
+
+  frameCount++
+  const now = performance.now()
+  if (now - lastTime >= 500) {  // 0.5초마다 갱신
+    fps = Math.round(
+      frameCount / ((now - lastTime) / 1000)
+    )
+    frameCount = 0
+    lastTime = now
+  }
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>dispose() — 메모리 해제</h3>
+<pre><code>// 모드 전환 시 이전 리소스 해제
+function clearScene() {
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose()
+      child.material.dispose()
+    }
+  })
+  scene.remove(group)
+}
+// dispose하지 않으면 GPU 메모리 누수!</code></pre>
+          <p>씬에서 <code>remove</code>만 하면 GPU 메모리에 geometry/material이 남아있습니다.
+             반드시 <code>dispose()</code>를 호출해야 합니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>19 - 절차적 생성 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 6px;
+      z-index: 10;
+    }
+    .mode-btn {
+      padding: 7px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #8b949e;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+    }
+    .mode-btn:hover { background: #21262d; }
+    .mode-btn.active { background: #1a3050; border-color: #58a6ff; color: #e6edf3; }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/18-physics/">← 이전</a>
+    <h1>19. 절차적 생성</h1>
+    <a href="/lessons/20-scene-management/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+      <div class="controls-bar">
+        <button class="mode-btn" id="btn-terrain">지형</button>
+        <button class="mode-btn" id="btn-city">도시</button>
+        <button class="mode-btn" id="btn-tree">나무</button>
+        <button class="mode-btn" id="btn-planet">행성</button>
+        <button class="mode-btn" id="btn-cave">동굴</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>절차적 생성이란?</h2>
+        <p>3D 모델을 직접 만들지 않고 <strong>알고리즘(코드)으로 생성</strong>하는 기법입니다.
+           지형, 도시, 식물, 동굴 등을 무한히 만들 수 있습니다.</p>
+        <div class="diagram">
+<pre>
+  수동 모델링:   Blender에서 산 하나 제작 → 그 산만 사용
+  절차적 생성:   노이즈 함수 + 파라미터 → 무한한 변형 가능
+                seed=42 → 항상 같은 결과 (재현 가능)
+                seed=43 → 완전히 다른 지형
+</pre>
+        </div>
+        <p>lil-gui에서 <strong>seed</strong>를 바꿔보세요. 같은 코드로 완전히 다른 지형이 생성됩니다.</p>
+
+        <h2>노이즈 함수</h2>
+        <p><code>Math.random()</code>은 완전히 무작위입니다.
+           노이즈 함수는 <strong>연속적인 랜덤</strong>을 생성합니다:</p>
+        <div class="diagram">
+<pre>
+  Math.random():     ┃╻┃╻╻┃╻┃    불연속 (지형에 부적합)
+
+  Noise:             ∿∿∿∿∿∿∿∿    연속적 (자연스러운 기복)
+
+  가까운 점은 비슷한 값 → 부드러운 지형
+</pre>
+        </div>
+
+        <h2>FBM (Fractal Brownian Motion)</h2>
+        <p>여러 <strong>옥타브(octave)</strong>의 노이즈를 합산하여 자연스러운 디테일을 만듭니다.
+           Lesson 03의 파동 합성과 같은 원리입니다:</p>
+<pre><code>function fbm(x, y, octaves, lacunarity, gain) {
+  let value = 0
+  let amplitude = 1
+  let frequency = 1
+
+  for (let i = 0; i < octaves; i++) {
+    value += noise(x * frequency, y * frequency) * amplitude
+    frequency *= lacunarity  // 주파수 증가 (디테일↑)
+    amplitude *= gain        // 진폭 감소 (영향↓)
+  }
+  return value
+}</code></pre>
+        <div class="diagram">
+<pre>
+  octave 1:  ∿∿∿∿∿∿         큰 산/골짜기
+  octave 2:  ∿∿∿∿∿∿∿∿       중간 기복
+  octave 3:  ∿∿∿∿∿∿∿∿∿∿∿    작은 요철
+  octave 4:  ∿∿∿∿∿∿∿∿∿∿∿∿∿  미세 디테일
+  ──────────────────────────
+  합산:      자연스러운 지형
+</pre>
+        </div>
+        <p>lil-gui에서 <strong>octaves</strong>를 1~8로 바꿔보세요.
+           1이면 부드러운 언덕, 8이면 거친 바위산이 됩니다.</p>
+
+        <h2>FBM 파라미터</h2>
+        <div class="diagram">
+<pre>
+  파라미터       역할                    lil-gui에서 확인
+  ─────────────────────────────────────────────────
+  scale         노이즈 확대/축소         낮으면 넓은 언덕, 높으면 좁은 봉우리
+  octaves       디테일 레벨 수           높을수록 거칠고 세밀
+  lacunarity    옥타브간 주파수 배율     높을수록 디테일이 급격히 작아짐
+  gain          옥타브간 진폭 비율       낮을수록 큰 형태 위주
+  seed          시작점 오프셋            같은 seed = 같은 지형
+  height        최종 높이 곱셈           지형의 높낮이 범위
+</pre>
+        </div>
+
+        <h2>높이 기반 색상</h2>
+        <p>vertex의 높이에 따라 색을 입힙니다 (vertex colors):</p>
+<pre><code>if (h < waterLevel) → 모래 (해변)
+else if (h < 0.45)  → 풀 (초록)
+else if (h < 0.65)  → 바위 (회색)
+else                → 눈 (흰색)</code></pre>
+        <p>캔버스의 지형이 높이에 따라 모래→풀→바위→눈으로 변하는 것을 확인하세요.</p>
+
+        <h2>섬 형태 만들기</h2>
+        <p>가장자리를 낮추는 <strong>falloff</strong>를 적용하면 물에 둘러싸인 섬이 됩니다:</p>
+<pre><code>// 중심에서의 거리 (0~1)
+const dist = Math.sqrt(dx*dx + dz*dz)
+
+// 가장자리로 갈수록 0에 가까워짐
+const falloff = Math.max(0, 1 - dist * 1.2)
+
+height *= falloff  // 가장자리 높이 → 0</code></pre>
+
+        <h2>3D Text</h2>
+        <p>이 레슨에서는 <code>TextGeometry</code>도 함께 다룹니다.
+           캔버스 상단에 떠다니는 "Procedural" 텍스트가 3D Text입니다:</p>
+<pre><code>import { TextGeometry } from
+  'three/examples/jsm/geometries/TextGeometry.js'
+import { FontLoader } from
+  'three/examples/jsm/loaders/FontLoader.js'
+
+const fontLoader = new FontLoader()
+fontLoader.load('font.json', (font) => {
+  const textGeo = new TextGeometry('Hello', {
+    font,
+    size: 1.5,       // 글자 크기
+    depth: 0.3,      // 두께 (3D 깊이)
+    curveSegments: 6, // 곡선 정밀도
+    bevelEnabled: true,
+    bevelThickness: 0.05,
+    bevelSize: 0.04,
+  })
+  textGeo.center()  // 원점을 텍스트 중앙으로
+  const mesh = new THREE.Mesh(textGeo, material)
+  scene.add(mesh)
+})</code></pre>
+
+        <div class="note">
+          <code>TextGeometry</code>는 vertex 수가 많으므로
+          <code>curveSegments</code>와 <code>bevelSegments</code>를 낮게 유지하세요.
+          실시간으로 변하는 텍스트(점수 등)는 Canvas 텍스처나 HTML 오버레이가 더 효율적입니다.
+        </div>
+
+        <h2>Perlin/Simplex vs 우리의 노이즈</h2>
+        <p>이 레슨에서는 간단한 해시 기반 노이즈를 직접 구현했습니다.
+           프로덕션에서는 <strong>Simplex noise</strong> 라이브러리를 사용합니다:</p>
+<pre><code>// npm install simplex-noise
+import { createNoise2D } from 'simplex-noise'
+const noise2D = createNoise2D()
+const value = noise2D(x * scale, z * scale)
+// 반환: -1 ~ +1</code></pre>
+        <p>Simplex noise가 시각적 품질과 성능 모두 우수합니다.</p>
+
+        <h2>절차적 생성 활용</h2>
+        <div class="diagram">
+<pre>
+  활용                  방법
+  ──────────────────────────────────────
+  지형/산/섬           FBM 노이즈 → heightmap
+  도시/건물            격자 + 랜덤 높이/너비
+  나무/식물            L-system, 재귀 분기
+  동굴/던전            셀룰러 오토마타, 무작위 방 연결
+  행성 표면            구체 + 3D 노이즈
+  텍스처 패턴          2D 노이즈 → canvas → texture
+</pre>
+        </div>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 해시 노이즈 함수</h3>
+<pre><code>// 2D 해시 (의사 난수)
+function hash2(x: number, y: number): number {
+  let n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+  return n - Math.floor(n)  // 0~1
+}
+
+// 부드러운 보간 노이즈
+function smoothNoise(x: number, y: number): number {
+  const ix = Math.floor(x)
+  const iy = Math.floor(y)
+  const fx = x - ix
+  const fy = y - iy
+
+  // smoothstep 보간
+  const ux = fx * fx * (3 - 2 * fx)
+  const uy = fy * fy * (3 - 2 * fy)
+
+  // 4개 격자점의 해시를 보간
+  const a = hash2(ix, iy)
+  const b = hash2(ix + 1, iy)
+  const c = hash2(ix, iy + 1)
+  const d = hash2(ix + 1, iy + 1)
+
+  return a + (b-a)*ux + (c-a)*uy + (a-b-c+d)*ux*uy
+}</code></pre>
+          <p><code>smoothstep</code> 보간이 핵심입니다. 격자점 사이를 부드럽게 연결합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: FBM (다중 옥타브 합성)</h3>
+<pre><code>function fbm(x, y, octaves, lacunarity, gain) {
+  let value = 0
+  let amplitude = 1
+  let frequency = 1
+  let maxValue = 0
+
+  for (let i = 0; i < octaves; i++) {
+    value += smoothNoise(x * frequency, y * frequency)
+             * amplitude
+    maxValue += amplitude
+    amplitude *= gain        // 진폭 감소
+    frequency *= lacunarity  // 주파수 증가
+  }
+
+  return value / maxValue  // 0~1 정규화
+}</code></pre>
+          <p>Lesson 03에서 배운 파동 합성과 동일한 원리입니다.
+             <code>lacunarity=2, gain=0.5</code>이면 옥타브마다
+             주파수 2배, 진폭 절반으로 줄어듭니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: PlaneGeometry vertex 변형</h3>
+<pre><code>const geo = new THREE.PlaneGeometry(
+  30, 30,    // 크기
+  128, 128   // 세그먼트 (높을수록 디테일)
+)
+geo.rotateX(-Math.PI / 2)  // XZ 평면으로
+
+const positions = geo.attributes.position
+
+for (let i = 0; i < positions.count; i++) {
+  const x = positions.getX(i)
+  const z = positions.getZ(i)
+
+  // seed로 노이즈 시작점 이동
+  const nx = (x / size + 0.5) * scale + seed * 100
+  const nz = (z / size + 0.5) * scale + seed * 100
+
+  let h = fbm(nx, nz, octaves, lacunarity, gain)
+
+  // 섬 형태 falloff
+  const dist = Math.sqrt(dx*dx + dz*dz)
+  h *= Math.max(0, 1 - dist * 1.2)
+
+  positions.setY(i, h * height)
+}
+
+geo.computeVertexNormals()  // 노말 재계산 필수!</code></pre>
+          <p><code>computeVertexNormals()</code>를 호출하지 않으면
+             조명이 원래 평면의 법선을 사용하여 음영이 깨집니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 높이 기반 Vertex Colors</h3>
+<pre><code>const colors = new Float32Array(positions.count * 3)
+
+for (let i = 0; i < positions.count; i++) {
+  const h = normalizedHeight
+
+  if (h < waterLevel) {
+    // 모래
+    colors[i*3] = 0.76; colors[i*3+1] = 0.7; colors[i*3+2] = 0.5
+  } else if (h < 0.45) {
+    // 풀
+    colors[i*3] = 0.2; colors[i*3+1] = 0.5; colors[i*3+2] = 0.15
+  } else if (h < 0.65) {
+    // 바위
+    colors[i*3] = 0.45; colors[i*3+1] = 0.42; colors[i*3+2] = 0.38
+  } else {
+    // 눈
+    colors[i*3] = 0.95; colors[i*3+1] = 0.92; colors[i*3+2] = 0.93
+  }
+}
+
+geo.setAttribute('color',
+  new THREE.BufferAttribute(colors, 3)
+)
+
+// material에서 vertexColors 활성화
+new THREE.MeshStandardMaterial({ vertexColors: true })</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 3D Text</h3>
+<pre><code>import { TextGeometry } from
+  'three/examples/jsm/geometries/TextGeometry.js'
+import { FontLoader } from
+  'three/examples/jsm/loaders/FontLoader.js'
+
+const loader = new FontLoader()
+loader.load('font.json', (font) => {
+  const geo = new TextGeometry('Procedural', {
+    font,
+    size: 1.5,
+    depth: 0.3,
+    bevelEnabled: true,
+    bevelThickness: 0.05,
+    bevelSize: 0.04,
+  })
+  geo.center()  // 텍스트 중앙 정렬
+
+  const mesh = new THREE.Mesh(geo, material)
+  scene.add(mesh)
+})</code></pre>
+          <p><code>center()</code>를 호출하지 않으면 텍스트가 왼쪽 하단 기준으로 배치됩니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

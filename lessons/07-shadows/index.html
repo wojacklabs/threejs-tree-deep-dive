@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>07 - 그림자 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+      flex-wrap: wrap;
+    }
+    .controls-bar button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .controls-bar button:hover { background: #21262d; }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/06-light/">← 이전</a>
+    <h1>07. 그림자</h1>
+    <a href="/lessons/08-textures/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="controls-bar">
+        <button id="btn-shadow-type">Shadow Type: <span id="shadow-type">PCFSoftShadowMap</span></button>
+        <button id="btn-map-size">mapSize: 1024</button>
+        <button id="btn-shadow-helper">Shadow Camera: OFF</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>그림자의 원리</h2>
+        <p>Three.js의 그림자는 <strong>Shadow Map</strong> 기법을 사용합니다.
+           조명 시점에서 씬을 한 번 더 렌더링하여 깊이 정보를 텍스처에 저장하고,
+           이를 실제 렌더링 시 비교하여 그림자 영역을 결정합니다.</p>
+        <div class="diagram">
+<pre>
+  그림자 렌더링 과정:
+
+  1단계: 조명 시점에서 깊이 렌더링
+         light ──→ [depth texture]
+
+  2단계: 카메라 시점에서 실제 렌더링
+         각 픽셀마다:
+         "이 픽셀이 조명에서 보이는가?"
+         → 보임: 밝음
+         → 안 보임 (다른 물체에 가림): 그림자
+</pre>
+        </div>
+
+        <div class="note">
+          그림자는 <strong>성능 비용이 큽니다</strong>.
+          조명마다 씬을 한 번 더 렌더링하기 때문입니다.
+          그림자가 필요한 조명과 오브젝트에만 선택적으로 활성화하세요.
+        </div>
+
+        <h2>그림자 활성화 3단계</h2>
+        <p>그림자를 표시하려면 <strong>3곳</strong>에서 모두 활성화해야 합니다:</p>
+<pre><code>// 1. Renderer에서 그림자 활성화
+renderer.shadowMap.enabled = true
+
+// 2. 조명에서 그림자 생성 활성화
+light.castShadow = true
+
+// 3. 오브젝트에서:
+mesh.castShadow = true     // 그림자를 드리움
+mesh.receiveShadow = true  // 그림자를 받음 (바닥 등)</code></pre>
+        <p><strong>하나라도 빠지면 그림자가 보이지 않습니다.</strong>
+           가장 흔한 실수는 <code>receiveShadow</code>를 바닥에 설정하지 않는 것입니다.</p>
+
+        <h2>Shadow Map 종류</h2>
+        <p>캔버스 하단의 <strong>Shadow Type</strong> 버튼으로 4종을 비교할 수 있습니다:</p>
+        <div class="diagram">
+<pre>
+  종류              품질    성능    특징
+  ──────────────────────────────────────────
+  BasicShadowMap    낮음    빠름    계단 현상 심함
+  PCFShadowMap      중간    보통    기본 안티앨리어싱
+  PCFSoftShadowMap  좋음    보통    부드러운 경계 (기본 추천)
+  VSMShadowMap      좋음    느림    블러 효과, 빛 새는 현상 가능
+</pre>
+        </div>
+
+        <div class="note">
+          <strong>PCFSoftShadowMap</strong>이 품질/성능 밸런스가 가장 좋아 기본 추천입니다.
+          <code>shadow.radius</code>로 블러 정도를 조절할 수 있습니다 (PCFSoft 전용).
+        </div>
+
+        <h2>Shadow Map 해상도</h2>
+        <p><code>shadow.mapSize</code>는 깊이 텍스처의 해상도입니다.
+           <strong>mapSize</strong> 버튼으로 256~2048을 비교해보세요:</p>
+<pre><code>light.shadow.mapSize.width = 1024
+light.shadow.mapSize.height = 1024</code></pre>
+        <div class="diagram">
+<pre>
+  mapSize    그림자 품질     GPU 메모리
+  ────────────────────────────────────
+  256        계단 심함       적음
+  512        보통            보통
+  1024       좋음 (추천)     보통
+  2048       매우 좋음       많음
+  4096       최고            매우 많음
+</pre>
+        </div>
+        <p>값은 항상 <strong>2의 거듭제곱</strong>(256, 512, 1024...)이어야 합니다.</p>
+
+        <h2>Shadow Camera (그림자 카메라)</h2>
+        <p>DirectionalLight의 그림자는 내부적으로 <strong>OrthographicCamera</strong>를 사용합니다.
+           이 카메라의 frustum 범위가 그림자가 렌더링되는 영역을 결정합니다:</p>
+<pre><code>dirLight.shadow.camera.left = -5
+dirLight.shadow.camera.right = 5
+dirLight.shadow.camera.top = 5
+dirLight.shadow.camera.bottom = -5
+dirLight.shadow.camera.near = 0.5
+dirLight.shadow.camera.far = 20</code></pre>
+        <p><strong>Shadow Camera</strong> 버튼으로 이 frustum을 시각화할 수 있습니다.</p>
+
+        <div class="note">
+          shadow camera의 범위가 <strong>너무 넓으면</strong> 해상도가 낭비되고 그림자가 흐려집니다.
+          <strong>너무 좁으면</strong> 범위 밖의 그림자가 잘립니다.
+          씬에 맞게 가능한 한 타이트하게 설정하는 것이 품질의 핵심입니다.
+        </div>
+
+        <h2>그림자를 지원하는 조명</h2>
+        <p>모든 조명이 그림자를 생성할 수 있는 것은 아닙니다:</p>
+        <div class="diagram">
+<pre>
+  조명               그림자   Shadow Camera 타입
+  ──────────────────────────────────────────────
+  DirectionalLight   ✓       OrthographicCamera
+  SpotLight          ✓       PerspectiveCamera
+  PointLight         ✓       CubeCamera (6방향)
+  AmbientLight       ✗       방향이 없음
+  HemisphereLight    ✗       방향이 없음
+</pre>
+        </div>
+        <p><code>PointLight</code>는 6방향 큐브맵을 렌더링하므로
+           <strong>6배의 비용</strong>이 듭니다. 가능하면 SpotLight로 대체하세요.</p>
+
+        <h2>그림자 최적화 팁</h2>
+        <ul>
+          <li>그림자를 생성하는 조명 수를 <strong>최소화</strong> (보통 1~2개)</li>
+          <li><code>castShadow</code>는 <strong>필요한 오브젝트만</strong> 활성화</li>
+          <li>shadow camera frustum을 씬에 <strong>타이트하게</strong> 맞추기</li>
+          <li>mapSize는 <strong>1024</strong>이면 대부분 충분</li>
+          <li>움직이지 않는 씬은 그림자를 <strong>텍스처에 베이크</strong> (bake) 고려</li>
+        </ul>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: Renderer에서 그림자 활성화</h3>
+<pre><code>const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+// PCFSoftShadowMap: 부드러운 그림자 경계 (추천)</code></pre>
+          <p>이 설정 없이는 어떤 그림자도 표시되지 않습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: DirectionalLight 그림자</h3>
+<pre><code>const dirLight = new THREE.DirectionalLight(0xffffff, 2)
+dirLight.position.set(-2, 6, 3)
+dirLight.castShadow = true  // 그림자 생성 활성화
+
+// 그림자 품질 설정
+dirLight.shadow.mapSize.width = 1024   // 해상도
+dirLight.shadow.mapSize.height = 1024
+dirLight.shadow.radius = 4  // 블러 반경 (PCFSoft 전용)
+
+// 그림자 카메라 범위 (OrthographicCamera)
+dirLight.shadow.camera.left = -5
+dirLight.shadow.camera.right = 5
+dirLight.shadow.camera.top = 5
+dirLight.shadow.camera.bottom = -5
+dirLight.shadow.camera.near = 0.5
+dirLight.shadow.camera.far = 20
+
+scene.add(dirLight)</code></pre>
+          <p><code>shadow.camera</code>의 범위를 씬에 맞게 조절하는 것이 품질의 핵심입니다.
+             범위가 넓으면 같은 mapSize에서 해상도가 분산되어 품질이 떨어집니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 오브젝트에 그림자 설정</h3>
+<pre><code>// 그림자를 드리우는 오브젝트
+box.castShadow = true
+sphere.castShadow = true
+
+// 그림자를 받는 오브젝트 (바닥)
+floor.receiveShadow = true
+
+// 둘 다 가능 (다른 물체의 그림자를 받으면서 자신도 드리움)
+box.castShadow = true
+box.receiveShadow = true</code></pre>
+          <p><code>castShadow</code>를 활성화한 오브젝트만 그림자를 드리우므로,
+             성능을 위해 필요한 오브젝트에만 설정하세요.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: SpotLight 그림자</h3>
+<pre><code>const spotLight = new THREE.SpotLight(
+  0xff8844, 5, 15,
+  Math.PI / 5,  // 원뿔 각도
+  0.4           // penumbra
+)
+spotLight.position.set(4, 5, 2)
+spotLight.castShadow = true
+
+// SpotLight의 shadow camera는 PerspectiveCamera
+spotLight.shadow.mapSize.width = 1024
+spotLight.shadow.mapSize.height = 1024
+spotLight.shadow.camera.near = 1
+spotLight.shadow.camera.far = 15
+
+scene.add(spotLight)
+scene.add(spotLight.target)  // target 씬에 추가 필수</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: Shadow Camera 디버깅</h3>
+<pre><code>// DirectionalLight의 shadow camera를 시각화
+const helper = new THREE.CameraHelper(
+  dirLight.shadow.camera
+)
+scene.add(helper)
+// 프로덕션에서는 제거</code></pre>
+          <p>그림자가 잘리거나 품질이 나쁠 때 shadow camera의 범위를 시각화하여 확인합니다.
+             frustum 밖의 영역에는 그림자가 생기지 않습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: Shadow Map 타입 변경 (런타임)</h3>
+<pre><code>renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
+// 런타임에 변경 시 material 재컴파일 필요
+scene.traverse((obj) => {
+  if (obj instanceof THREE.Mesh) {
+    obj.material.needsUpdate = true
+  }
+})
+
+// shadow map도 재생성
+light.shadow.map?.dispose()
+light.shadow.map = null</code></pre>
+          <p>shadow map 타입이나 mapSize를 런타임에 바꾸면
+             기존 shadow map을 dispose하고 material을 갱신해야 합니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

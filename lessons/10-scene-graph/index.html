@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>10 - 그룹과 씬 그래프 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .controls-bar {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      display: flex;
+      gap: 8px;
+      z-index: 10;
+    }
+    .controls-bar button {
+      padding: 6px 14px;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      background: #161b22;
+      color: #e6edf3;
+      font-size: 12px;
+      font-family: 'Fira Code', monospace;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .controls-bar button:hover { background: #21262d; }
+    .info-bar {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      z-index: 10;
+      font-family: 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      background: rgba(13,17,23,0.8);
+      padding: 8px 12px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/09-env-map/">← 이전</a>
+    <h1>10. 그룹과 씬 그래프</h1>
+    <a href="/lessons/11-raycasting/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+      <div class="controls-bar">
+        <button id="btn-speed">Speed: 1x</button>
+        <button id="btn-hierarchy">Hierarchy: OFF</button>
+      </div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>씬 그래프란?</h2>
+        <p>Three.js의 모든 오브젝트는 <strong>트리(tree) 구조</strong>로 연결됩니다.
+           이를 <em>씬 그래프(Scene Graph)</em>라고 합니다.</p>
+        <div class="diagram">
+<pre>
+  Scene (루트)
+  ├── Sun (Mesh)
+  │   └── PointLight
+  ├── earthOrbitGroup (Group)
+  │   ├── Earth (Mesh)
+  │   └── moonOrbitGroup (Group)
+  │       ├── Moon (Mesh)
+  │       └── moonOrbitLine (Line)
+  ├── marsOrbitGroup (Group)
+  │   ├── Mars (Mesh)
+  │   └── phobosOrbitGroup (Group)
+  │       └── Phobos (Mesh)
+  └── Stars (Points)
+</pre>
+        </div>
+        <p>캔버스의 태양계가 이 구조로 만들어져 있습니다.</p>
+
+        <h2>Group — 빈 컨테이너</h2>
+        <p><code>THREE.Group</code>은 <strong>보이지 않는 빈 컨테이너</strong>입니다.
+           자식 오브젝트를 묶어서 한 번에 변환(이동/회전/스케일)할 때 사용합니다.</p>
+<pre><code>const group = new THREE.Group()
+scene.add(group)
+
+const mesh = new THREE.Mesh(geometry, material)
+mesh.position.x = 7  // 그룹 내 로컬 좌표
+group.add(mesh)
+
+// 그룹을 회전하면 → 자식도 따라 회전
+group.rotation.y += 0.01
+// mesh는 그룹 중심(원점)에서 7유닛 거리에서 공전!</code></pre>
+
+        <h2>parent.add(child)의 의미</h2>
+        <p>자식의 <strong>position, rotation, scale</strong>은 부모를 기준으로 합니다:</p>
+        <div class="diagram">
+<pre>
+  earthOrbitGroup.rotation.y = t  (그룹 회전)
+        │
+        └── earth.position.x = 7  (그룹 내 로컬 좌표)
+                │
+                결과: 지구가 원점에서 7유닛 거리로 공전
+
+  부모가 회전 → 자식의 위치도 회전
+  부모가 이동 → 자식도 따라 이동
+  부모가 스케일 → 자식도 같이 커짐/줄어듬
+</pre>
+        </div>
+
+        <h2>로컬 좌표 vs 월드 좌표</h2>
+        <p>캔버스 왼쪽 상단에서 지구와 달의 좌표를 확인할 수 있습니다:</p>
+        <ul>
+          <li><strong>로컬(local)</strong> — 부모 기준 좌표. 지구는 항상 <code>(7, 0, 0)</code></li>
+          <li><strong>월드(world)</strong> — 씬 전체 기준 좌표. 공전에 따라 매 프레임 변함</li>
+        </ul>
+<pre><code>// 로컬 좌표 (항상 동일)
+earth.position  // { x: 7, y: 0, z: 0 }
+
+// 월드 좌표 (매 프레임 변화)
+const worldPos = new THREE.Vector3()
+earth.getWorldPosition(worldPos)
+// { x: 4.2, y: 0, z: -5.6 } ← 공전 위치에 따라 달라짐</code></pre>
+
+        <div class="note">
+          <code>mesh.position</code>은 항상 <strong>로컬</strong> 좌표입니다.
+          월드 좌표가 필요하면 <code>getWorldPosition()</code>을 사용하세요.
+          Raycasting이나 충돌 감지에서 월드 좌표가 필요합니다.
+        </div>
+
+        <h2>태양계 구조의 핵심</h2>
+        <p>달이 지구를 따라다니면서 동시에 지구 주위를 공전하는 이유:</p>
+        <div class="diagram">
+<pre>
+  1. earthOrbitGroup 회전
+     → 자식인 earth + moonOrbitGroup 모두 공전
+
+  2. moonOrbitGroup도 earthOrbitGroup의 자식
+     → 지구와 같은 위치에서 시작
+
+  3. moonOrbitGroup 자체도 회전
+     → 자식인 moon이 지구 주위를 공전
+
+  결과: 달은 지구를 따라다니면서 지구 주위를 공전
+  코드는 각 그룹의 rotation.y만 바꾸면 됨!
+</pre>
+        </div>
+        <p><strong>Hierarchy</strong> 버튼으로 부모→자식 연결선을 시각화할 수 있습니다.</p>
+
+        <h2>traverse()</h2>
+        <p>씬 그래프의 모든 노드를 순회합니다:</p>
+<pre><code>// 씬의 모든 오브젝트 순회
+scene.traverse((object) => {
+  if (object instanceof THREE.Mesh) {
+    object.castShadow = true  // 모든 Mesh에 그림자 설정
+  }
+})
+
+// 특정 그룹의 자식만 순회
+group.traverse((child) => {
+  // group과 그 하위 모든 오브젝트
+})</code></pre>
+
+        <h2>실무 활용</h2>
+        <p>씬 그래프는 태양계뿐 아니라 다양한 곳에서 활용됩니다:</p>
+        <div class="diagram">
+<pre>
+  활용 예                  구조
+  ──────────────────────────────────────
+  자동차               body
+                       ├── wheel_FL (회전)
+                       ├── wheel_FR (회전)
+                       └── door (열림/닫힘)
+
+  로봇 팔              shoulder (회전)
+                       └── upperArm
+                           └── elbow (회전)
+                               └── foreArm
+                                   └── hand (회전)
+
+  GLTF 모델 로딩       scene (Group)
+                       ├── mesh1
+                       ├── mesh2
+                       └── bone hierarchy
+</pre>
+        </div>
+        <p>관절, 계층적 움직임, 모델 로딩 결과 등 모두 씬 그래프 구조입니다.
+           Lesson 13(GLTF 모델 로딩)에서 실제 모델의 씬 그래프를 다룹니다.</p>
+
+        <h2>Object3D 공통 속성</h2>
+        <p><code>Scene</code>, <code>Group</code>, <code>Mesh</code>, <code>Light</code> 등
+           모든 3D 오브젝트는 <code>Object3D</code>를 상속합니다:</p>
+<pre><code>object.position   // Vector3 — 로컬 위치
+object.rotation   // Euler — 로컬 회전
+object.scale      // Vector3 — 로컬 스케일
+object.visible    // boolean — 표시 여부
+object.parent     // 부모 참조
+object.children   // 자식 배열
+object.name       // 이름 (검색용)
+object.add(child)     // 자식 추가
+object.remove(child)  // 자식 제거</code></pre>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 태양 (씬에 직접 추가)</h3>
+<pre><code>const sun = new THREE.Mesh(
+  new THREE.SphereGeometry(1.5, 32, 16),
+  new THREE.MeshBasicMaterial({ color: 0xffaa00 })
+)
+scene.add(sun)
+
+// PointLight를 태양의 자식으로 추가
+// → 태양이 회전해도 빛은 항상 태양 중심에서 나옴
+const sunLight = new THREE.PointLight(0xffffcc, 3, 50)
+sun.add(sunLight)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: 지구 공전 — Group 활용</h3>
+<pre><code>// 빈 그룹 생성 (공전 제어용)
+const earthOrbitGroup = new THREE.Group()
+scene.add(earthOrbitGroup)
+
+// 지구를 그룹의 자식으로 추가
+const earth = new THREE.Mesh(...)
+earth.position.x = 7  // 그룹 내 로컬 좌표
+earthOrbitGroup.add(earth)
+
+// animate에서:
+earthOrbitGroup.rotation.y = t * 0.5
+// → 그룹이 회전하면 자식인 earth가 공전!
+
+// 지구 자전은 별도
+earth.rotation.y = t * 2</code></pre>
+          <p>공전(orbit)과 자전(spin)을 분리하는 핵심 패턴입니다.
+             그룹 회전 = 공전, 오브젝트 회전 = 자전.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 달 — 중첩된 Group</h3>
+<pre><code>// 달 공전 그룹을 지구 공전 그룹의 자식으로
+const moonOrbitGroup = new THREE.Group()
+moonOrbitGroup.position.x = 7  // 지구와 같은 위치
+earthOrbitGroup.add(moonOrbitGroup)
+//              ↑ scene이 아닌 earthOrbitGroup에 추가!
+
+const moon = new THREE.Mesh(...)
+moon.position.x = 1.5  // 달 궤도 반지름
+moonOrbitGroup.add(moon)
+
+// animate에서:
+moonOrbitGroup.rotation.y = t * 2.5
+// → 달이 지구 주위를 공전
+// → 동시에 earthOrbitGroup의 회전으로 태양 주위도 공전</code></pre>
+          <p>계층 구조의 힘: <code>moonOrbitGroup</code>의 rotation만 바꾸면
+             달은 자동으로 지구를 따라다니면서 지구 주위를 공전합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: 월드 좌표 읽기</h3>
+<pre><code>const worldPos = new THREE.Vector3()
+earth.getWorldPosition(worldPos)
+// 부모들의 변환이 모두 적용된 최종 위치
+
+const worldQuat = new THREE.Quaternion()
+earth.getWorldQuaternion(worldQuat)
+// 월드 기준 회전
+
+const worldScale = new THREE.Vector3()
+earth.getWorldScale(worldScale)
+// 월드 기준 스케일</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: 궤도 시각화</h3>
+<pre><code>// 원형 경로를 Line으로 시각화
+const orbitLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 65 }, (_, i) => {
+      const a = (i / 64) * Math.PI * 2
+      return new THREE.Vector3(
+        Math.cos(a) * 7,  // 궤도 반지름
+        0,
+        Math.sin(a) * 7
+      )
+    })
+  ),
+  new THREE.LineBasicMaterial({ color: 0x334466 })
+)
+scene.add(orbitLine)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: traverse 활용</h3>
+<pre><code>// 씬의 모든 Mesh를 찾아 작업
+scene.traverse((obj) => {
+  if (obj instanceof THREE.Mesh) {
+    obj.castShadow = true
+  }
+})
+
+// 이름으로 검색
+const found = scene.getObjectByName('Earth')
+
+// 타입으로 검색
+const meshes: THREE.Mesh[] = []
+scene.traverse((obj) => {
+  if (obj instanceof THREE.Mesh) meshes.push(obj)
+})</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

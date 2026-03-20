@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>02 - Geometry 탐험 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/01-scene-basics/">← 이전</a>
+    <h1>02. Geometry 탐험</h1>
+    <a href="/lessons/03-animation/">다음 →</a>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel">
+      <canvas id="c"></canvas>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <!-- ────── 개념 탭 ────── -->
+      <div class="tab-content active" id="tab-concept">
+        <h2>Geometry란?</h2>
+        <p>Geometry는 3D 물체의 <strong>형태(shape)</strong>를 정의하는 데이터입니다.
+           내부적으로는 <em>꼭짓점(vertex)</em>들의 좌표 배열과,
+           어떤 꼭짓점을 연결해 삼각형(face)을 만드는지에 대한 정보를 담고 있습니다.</p>
+
+        <div class="diagram">
+<pre>
+  Geometry의 구성:
+
+  position  [x,y,z, x,y,z, ...]   ← 꼭짓점 좌표
+  normal    [x,y,z, x,y,z, ...]   ← 면의 방향 (조명 계산용)
+  uv        [u,v, u,v, ...]        ← 텍스처 좌표 (이미지 매핑용)
+  index     [0,1,2, 2,3,0, ...]    ← 삼각형 구성 순서
+</pre>
+        </div>
+
+        <p>Three.js는 자주 쓰는 형태를 미리 만들어둔
+           <strong>내장 Geometry</strong>를 제공합니다. 직접 꼭짓점을 정의할 필요 없이
+           파라미터만 넘기면 됩니다.</p>
+
+        <h2>내장 Geometry 목록</h2>
+
+        <p><strong>입체 도형:</strong></p>
+        <ul>
+          <li><code>BoxGeometry(w, h, d)</code> — 직육면체. 가로, 세로, 깊이</li>
+          <li><code>SphereGeometry(r, wSeg, hSeg)</code> — 구. 반지름, 가로/세로 세그먼트</li>
+          <li><code>ConeGeometry(r, h, seg)</code> — 원뿔. 반지름, 높이, 세그먼트</li>
+          <li><code>CylinderGeometry(rTop, rBot, h, seg)</code> — 원기둥. 상단/하단 반지름, 높이</li>
+          <li><code>TorusGeometry(r, tube, rSeg, tSeg)</code> — 도넛. 큰 반지름, 튜브 반지름</li>
+          <li><code>TorusKnotGeometry(r, tube, tSeg, rSeg)</code> — 매듭 도넛. 수학적 토러스 매듭</li>
+        </ul>
+
+        <p><strong>평면 도형:</strong></p>
+        <ul>
+          <li><code>PlaneGeometry(w, h)</code> — 사각 평면. 바닥, 벽 등에 사용</li>
+          <li><code>RingGeometry(rInner, rOuter, seg)</code> — 고리 평면</li>
+          <li><code>CircleGeometry(r, seg)</code> — 원형 평면</li>
+        </ul>
+
+        <div class="note">
+          이 내장 Geometry들은 편의를 위해 미리 만들어둔 것입니다.
+          본질은 <code>BufferGeometry</code>에 <code>Float32Array</code>로
+          꼭짓점 좌표를 직접 넣는 것이며, 내장에 없는 형태도 자유롭게 만들 수 있습니다.
+          커스텀 Geometry는 Lesson 15에서 다룹니다.
+        </div>
+
+        <h2>Segments (세그먼트)</h2>
+        <p>대부분의 Geometry는 <strong>segments</strong> 파라미터를 받습니다.
+           이것은 형태를 얼마나 촘촘하게 나눌지를 결정합니다.</p>
+
+        <div class="diagram">
+<pre>
+  SphereGeometry(0.6, 6, 4)     SphereGeometry(0.6, 32, 16)
+
+       /\                           ,-----.
+      /  \                        ,'       `.
+     /    \                      /           \
+    /------\                    |             |
+    \      /                    |             |
+     \    /                      \           /
+      \  /                        `.       ,'
+       \/                           `-----'
+
+   6개 세그먼트 (각진 형태)       32개 세그먼트 (부드러운 형태)
+   vertex 적음 → 빠름            vertex 많음 → 느림
+</pre>
+        </div>
+
+        <p>왼쪽 캔버스에서 <em>segments: 6</em>과 <em>segments: 32</em> 구체를 비교해보세요.
+           세그먼트가 적으면 각져 보이고, 많으면 부드러워집니다.</p>
+
+        <div class="note">
+          세그먼트를 높이면 부드러워지지만, vertex 수가 늘어나 성능 비용이 증가합니다.
+          SphereGeometry(1, 32, 16)이면 약 <strong>560개</strong>의 vertex가 생성되지만,
+          SphereGeometry(1, 128, 64)이면 약 <strong>8,300개</strong>입니다.
+          필요한 만큼만 사용하는 것이 원칙입니다.
+        </div>
+
+        <p><strong>하나의 Geometry 안에서 부분적으로 segment를 다르게 하는 것은 불가능합니다.</strong>
+           segment는 전체에 균일하게 적용됩니다.
+           대신 <strong>별개의 Mesh</strong>라면 각각 다른 segment 수를 사용할 수 있습니다:</p>
+<pre><code>// 주인공 — 가까이서 보이니까 고폴리
+const hero = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 64, 32),  material
+)
+
+// 배경 돌멩이 — 멀리 있으니까 저폴리
+const rock = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 8, 6),  material
+)</code></pre>
+        <p>실무에서는 이 원리를 확장한 <em>LOD(Level of Detail)</em> 패턴으로,
+           카메라 거리에 따라 고폴리/저폴리 Mesh를 자동 전환합니다 (Lesson 18).</p>
+
+        <h2>Wireframe</h2>
+        <p><code>wireframe: true</code>를 Material에 설정하면
+           면을 채우지 않고 <strong>삼각형의 변(edge)만</strong> 표시합니다.
+           Geometry의 내부 구조를 눈으로 확인할 때 유용합니다.</p>
+<pre><code>const material = new THREE.MeshNormalMaterial({
+  wireframe: true
+})</code></pre>
+        <p>캔버스의 뒷줄 오브젝트들이 wireframe 모드입니다.
+           삼각형이 어떻게 구성되어 있는지 확인해보세요.</p>
+
+        <h2>position으로 배치하기</h2>
+        <p>생성된 Mesh는 기본적으로 원점 <code>(0, 0, 0)</code>에 배치됩니다.
+           <code>position.set(x, y, z)</code>으로 원하는 위치로 이동할 수 있습니다.</p>
+<pre><code>const box = new THREE.Mesh(geometry, material)
+box.position.set(-4, 0.5, 0)
+// x: 왼쪽으로 4
+// y: 위로 0.5 (바닥 위에 올림)
+// z: 기본 위치</code></pre>
+
+        <div class="note">
+          BoxGeometry(1,1,1)의 중심은 정가운데이므로,
+          바닥 위에 놓으려면 <code>y = 높이/2 = 0.5</code>로 설정해야 합니다.
+        </div>
+
+        <h2>flatShading</h2>
+        <p><code>flatShading: true</code>를 Material에 설정하면
+           면마다 하나의 법선을 사용하여 <strong>면 단위로 색상이 결정</strong>됩니다.
+           low-poly 스타일을 만들 때 유용합니다.</p>
+<pre><code>new THREE.MeshNormalMaterial({ flatShading: true })</code></pre>
+        <p>캔버스의 <em>segments: 6</em> 구체가 flatShading이 적용된 예시입니다.</p>
+
+        <h2>OrbitControls (미리보기)</h2>
+        <p>이 레슨에서는 마우스로 장면을 회전/줌할 수 있는
+           <code>OrbitControls</code>를 사용하고 있습니다.
+           자세한 내용은 Lesson 05에서 다룹니다.</p>
+        <ul>
+          <li><strong>드래그</strong> — 회전</li>
+          <li><strong>스크롤</strong> — 줌</li>
+          <li><strong>우클릭 드래그</strong> — 팬 (이동)</li>
+        </ul>
+      </div>
+
+      <!-- ────── 코드 탭 ────── -->
+      <div class="tab-content" id="tab-code">
+        <h2>전체 코드</h2>
+
+        <div class="code-section">
+          <h3>1단계: 기본 설정</h3>
+<pre><code>import * as THREE from 'three'
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+
+const canvas = document.getElementById('c') as HTMLCanvasElement
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(75, 1, 0.1, 1000)
+camera.position.set(0, 2, 8)
+// camera.position.set(x, y, z)
+//   x=0: 좌우 중앙
+//   y=2: 약간 위에서 내려다봄
+//   z=8: 뒤로 빼서 전체가 보이게
+
+const controls = new OrbitControls(camera, canvas)
+controls.enableDamping = true  // 관성 효과</code></pre>
+          <p>Lesson 01과 동일한 설정에 <code>OrbitControls</code>를 추가했습니다.
+             <code>enableDamping</code>은 드래그를 놓았을 때 부드럽게 멈추는 효과입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>2단계: Material 준비</h3>
+<pre><code>const material = new THREE.MeshNormalMaterial()
+const wireMaterial = new THREE.MeshNormalMaterial({ wireframe: true })</code></pre>
+          <p>같은 NormalMaterial이지만, 하나는 일반, 하나는 wireframe입니다.
+             <strong>Material 인스턴스는 여러 Mesh에서 공유</strong>할 수 있습니다 — 메모리 절약.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>3단계: 입체 도형 생성</h3>
+<pre><code>// BoxGeometry(가로, 세로, 깊이)
+const box = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  material
+)
+box.position.set(-4, 0.5, 0)
+scene.add(box)
+
+// SphereGeometry(반지름, 가로세그먼트, 세로세그먼트)
+const sphere = new THREE.Mesh(
+  new THREE.SphereGeometry(0.6, 32, 16),
+  material
+)
+sphere.position.set(-2, 0.6, 0)
+scene.add(sphere)
+
+// ConeGeometry(반지름, 높이, 세그먼트)
+const cone = new THREE.Mesh(
+  new THREE.ConeGeometry(0.5, 1.2, 32),
+  material
+)
+cone.position.set(0, 0.6, 0)
+scene.add(cone)
+
+// CylinderGeometry(상단반지름, 하단반지름, 높이, 세그먼트)
+const cylinder = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.4, 0.4, 1.2, 32),
+  material
+)
+cylinder.position.set(2, 0.6, 0)
+scene.add(cylinder)
+
+// TorusGeometry(큰반지름, 튜브반지름, 방사세그먼트, 관세그먼트)
+const torus = new THREE.Mesh(
+  new THREE.TorusGeometry(0.5, 0.2, 16, 32),
+  material
+)
+torus.position.set(4, 0.7, 0)
+scene.add(torus)</code></pre>
+          <p>각 Geometry의 파라미터가 형태를 어떻게 결정하는지 주석을 참고하세요.
+             <code>position.set()</code>으로 x축을 따라 2 간격으로 나란히 배치했습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>4단계: Wireframe 버전</h3>
+<pre><code>// 동일한 Geometry, wireframe Material
+const boxW = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  wireMaterial  // wireframe: true
+)
+boxW.position.set(-4, 0.5, -3)
+scene.add(boxW)
+
+// 세그먼트를 낮춰 삼각형 구조가 잘 보이게
+const sphereW = new THREE.Mesh(
+  new THREE.SphereGeometry(0.6, 8, 6),  // 8, 6 = 적은 세그먼트
+  wireMaterial
+)
+sphereW.position.set(-2, 0.6, -3)
+scene.add(sphereW)</code></pre>
+          <p>wireframe 모드에서는 세그먼트 수를 낮추면
+             삼각형이 어떻게 면을 구성하는지 명확히 보입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>5단계: Segments 비교</h3>
+<pre><code>// 저폴리 (6 세그먼트) — flatShading으로 면 구분 강조
+const lowPoly = new THREE.Mesh(
+  new THREE.SphereGeometry(0.6, 6, 4),
+  new THREE.MeshNormalMaterial({ flatShading: true })
+)
+lowPoly.position.set(-2, 0.6, 3)
+scene.add(lowPoly)
+
+// 고폴리 (32 세그먼트) — 같은 flatShading이지만 훨씬 부드러움
+const highPoly = new THREE.Mesh(
+  new THREE.SphereGeometry(0.6, 32, 16),
+  new THREE.MeshNormalMaterial({ flatShading: true })
+)
+highPoly.position.set(-4, 0.6, 3)
+scene.add(highPoly)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>6단계: 평면 도형</h3>
+<pre><code>// PlaneGeometry(가로, 세로) — 기본은 XY 평면
+const plane = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.5, 1.5),
+  material
+)
+plane.position.set(2, 0.8, 3)
+plane.rotation.x = -Math.PI * 0.3  // 약간 기울여서 보이게
+scene.add(plane)
+
+// RingGeometry(안쪽반지름, 바깥반지름, 세그먼트)
+const ring = new THREE.Mesh(
+  new THREE.RingGeometry(0.3, 0.6, 32),
+  material
+)
+ring.position.set(4, 0.8, 3)
+ring.rotation.x = -Math.PI * 0.3
+scene.add(ring)</code></pre>
+          <p><code>PlaneGeometry</code>는 기본적으로 XY 평면에 생성됩니다.
+             바닥으로 쓰려면 <code>rotation.x = -Math.PI / 2</code> (90도 회전)이 필요합니다.
+             여기서는 보기 쉽게 약간만 기울였습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>7단계: 텍스트 라벨 (Sprite)</h3>
+<pre><code>function createLabel(text: string, position: THREE.Vector3) {
+  const c = document.createElement('canvas')
+  c.width = 256; c.height = 64
+  const ctx = c.getContext('2d')!
+  ctx.fillStyle = '#ffffff'
+  ctx.font = 'bold 28px monospace'
+  ctx.textAlign = 'center'
+  ctx.fillText(text, 128, 40)
+
+  const texture = new THREE.CanvasTexture(c)
+  const mat = new THREE.SpriteMaterial({ map: texture, transparent: true })
+  const sprite = new THREE.Sprite(mat)
+  sprite.position.copy(position)
+  sprite.scale.set(2, 0.5, 1)
+  scene.add(sprite)
+}</code></pre>
+          <p><code>Sprite</code>는 항상 카메라를 향하는 2D 평면입니다.
+             Canvas 2D API로 텍스트를 그린 뒤 텍스처로 사용합니다.
+             3D 씬에 라벨을 붙이는 간단한 방법입니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>8단계: 애니메이션 루프</h3>
+<pre><code>const clock = new THREE.Clock()
+
+function animate() {
+  requestAnimationFrame(animate)
+  const t = clock.getElapsedTime()
+
+  box.rotation.y = t * 0.5
+  sphere.rotation.y = t * 0.5
+  torus.rotation.x = t * 0.5
+  torus.rotation.y = t * 0.3
+
+  controls.update()  // damping 적용을 위해 필수
+  renderer.render(scene, camera)
+}
+animate()</code></pre>
+          <p><code>THREE.Clock</code>의 <code>getElapsedTime()</code>은 경과 시간(초)을 반환합니다.
+             이전 레슨의 <code>rotation += 0.01</code>과 달리, 시간 기반이라
+             프레임 속도와 무관하게 일정한 속도로 회전합니다.</p>
+          <p><code>controls.update()</code>는 <code>enableDamping</code>을 사용할 때
+             반드시 매 프레임 호출해야 합니다.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>
