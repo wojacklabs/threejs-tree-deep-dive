@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>잎 배치 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/leaf-design.html">← 잎 디자인</a>
+    <h1>1단계: 잎 배치 곡선</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div style="position:absolute;top:12px;left:12px;font-family:'Fira Code',monospace;font-size:11px;color:#8b949e;background:rgba(13,17,23,0.8);padding:8px 12px;border-radius:6px;display:flex;flex-direction:column;gap:3px;z-index:10" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>배치 곡선 설계</h2>
+        <p>가지 위에 잎이 분포하는 패턴을 3개 파라미터로 제어합니다:</p>
+
+        <div class="diagram">
+<pre>
+  가지 시작                    가지 끝
+  │                              │
+  │  startT    peakT             │
+  │    │         │               │
+  │    ╱─────╲   │    ╱──╲      │
+  │  ╱         ╲ │  ╱      ╲    │
+  │╱             ╲╱          ╲──│
+  ├──────────────────────────────┤
+  0           t →                1
+
+  startT: 잎이 시작되는 위치
+  peakT:  가장 풍성한 위치
+  끝:     converge만큼 좁아지며 모임
+</pre>
+        </div>
+
+        <h2>밀도 곡선 (density)</h2>
+        <p><code>startT → peakT</code>: smoothstep으로 점점 증가</p>
+        <p><code>peakT → 1</code>: converge로 점점 감소 (모이는 느낌)</p>
+
+        <h2>반경 곡선 (radius)</h2>
+        <p>밀도와 유사하지만 <strong>공간적 퍼짐</strong>을 제어:</p>
+        <div class="diagram">
+<pre>
+  반경:
+  0 ──╱──peak──╲── 0 (수렴)
+     ↑          ↑
+  startT      converge로 좁아짐
+</pre>
+        </div>
+
+        <h2>시각화 요소</h2>
+        <ul>
+          <li><strong>색상 점</strong>: 배치 위치 (빨=시작, 녹=피크, 파=끝)</li>
+          <li><strong>파란 곡선</strong>: 밀도 + 반경 윤곽</li>
+          <li><strong>초록 곡선</strong>: 반대쪽 반경</li>
+          <li><strong>잎 메시</strong>: 실제 잎 배치</li>
+        </ul>
+        <p>시각화 토글로 점/가지/잎/곡선을 켜고 끌 수 있습니다.</p>
+
+        <h2>조절 가이드</h2>
+        <ul>
+          <li><strong>시작 위치</strong>: 높이면 가지 끝쪽에만 잎이 생김</li>
+          <li><strong>피크 위치</strong>: 가장 풍성한 지점</li>
+          <li><strong>끝 수렴도</strong>: 높이면 가지 끝이 뾰족하게 모임</li>
+          <li><strong>퍼짐 반경</strong>: 가지에서 얼마나 멀리 퍼지는지</li>
+          <li><strong>피크 반경 배율</strong>: 피크 지점의 볼륨감</li>
+        </ul>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>배치 곡선 코드</h2>
+
+        <div class="code-section">
+          <h3>밀도 함수</h3>
+<pre><code>function getDensity(t) {
+  if (t < startT) return 0
+  if (t < peakT) {
+    // smoothstep 증가
+    const s = (t - startT) / (peakT - startT)
+    return s * s * (3 - 2 * s)
+  } else {
+    // converge로 감소
+    const s = (t - peakT) / (1 - peakT)
+    return 1 - s * s * converge
+  }
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>반경 함수</h3>
+<pre><code>function getRadius(t) {
+  if (t < startT) return 0
+  if (t < peakT) {
+    const s = (t - startT) / (peakT - startT)
+    return spreadRadius * s * peakRadiusScale
+  } else {
+    const s = (t - peakT) / (1 - peakT)
+    const taper = 1 - s * converge
+    return spreadRadius * peakRadiusScale * taper
+  }
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>가지 주변 원형 배치</h3>
+<pre><code>// 가지 직교 벡터
+const right = cross(dir, up).normalize()
+const upLocal = cross(right, dir).normalize()
+
+// 원형 분포
+const angle = rand() * 2π
+const r = radius * sqrt(rand())  // sqrt → 균일
+
+pos = branchPt
+    + right * cos(angle) * r
+    + upLocal * sin(angle) * r</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./leaf-placement.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>
