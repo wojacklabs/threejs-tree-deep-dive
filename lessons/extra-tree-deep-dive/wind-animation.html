@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>바람 애니메이션 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/leaf-placement.html">← 잎 배치</a>
+    <h1>바람 애니메이션 탐색</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div style="position:absolute;top:12px;left:12px;font-family:'Fira Code',monospace;font-size:11px;color:#8b949e;background:rgba(13,17,23,0.8);padding:8px 12px;border-radius:6px;display:flex;flex-direction:column;gap:3px;z-index:10" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>바람 레이어 시스템</h2>
+        <p>나무의 각 부분이 서로 다른 주파수와 진폭으로 흔들립니다:</p>
+
+        <div class="diagram">
+<pre>
+  레이어 구조:
+
+  Layer 0: 줄기 흔들림 (trunk sway)
+  ├─ 가장 느림, 가장 큰 진폭
+  ├─ 전체 나무가 한 방향으로 기울어짐
+  └─ 높이² 에 비례 (뿌리=0, 꼭대기=최대)
+
+  Layer 1: 가지 흔들림 (branch sway)
+  ├─ 중간 속도, 중간 진폭
+  ├─ 각 가지가 개별적으로 흔들림
+  └─ 가지 길이 위치에 비례
+
+  Layer 2: 잎 떨림 (leaf flutter)
+  ├─ 가장 빠름, 가장 작은 진폭
+  ├─ 다중 주파수 (4Hz + 6.7Hz)
+  └─ 개별 잎마다 위상 오프셋
+</pre>
+        </div>
+
+        <h2>바람 파라미터</h2>
+        <ul>
+          <li><strong>풍향</strong>: 바람이 부는 방향 (라디안)</li>
+          <li><strong>풍속</strong>: 전체 바람 세기</li>
+          <li><strong>줄기 흔들림</strong>: trunk sway 강도</li>
+          <li><strong>가지 흔들림</strong>: branch sway 강도</li>
+          <li><strong>잎 떨림</strong>: leaf flutter 강도</li>
+          <li><strong>공간 위상</strong>: 위치에 따른 바람 위상 차이</li>
+        </ul>
+
+        <h2>구현 방식</h2>
+        <p>vertex shader에서 각 레이어를 합산:</p>
+        <div class="diagram">
+<pre>
+  최종 위치 = 원래 위치
+    + trunk_sway(worldPos, time)
+    + branch_sway(worldPos, time)
+    + leaf_flutter(worldPos, time)
+
+  각 레이어:
+    phase = dot(worldPos.xz, windDir) * spatialScale
+          + time * speed
+    displacement = sin(phase) * strength
+</pre>
+        </div>
+
+        <h2>vertex color alpha 인코딩</h2>
+        <div class="diagram">
+<pre>
+  alpha 0.00~0.25: trunk wind (줄기)
+  alpha 0.25~0.50: branch wind (가지)
+  alpha 0.50~1.00: leaf flutter (잎)
+</pre>
+        </div>
+        <p>이 페이지에서는 vertex color 없이 geometry depth로 레이어를 구분합니다.</p>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>바람 vertex shader</h2>
+
+        <div class="code-section">
+          <h3>줄기 흔들림</h3>
+<pre><code>float trunkPhase = spatialPhase + uTime * speed;
+float trunkSway = sin(trunkPhase);
+float trunkFactor = heightT * heightT;
+transformed.x += windDir.x * trunkSway * strength * trunkFactor;</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>가지 흔들림</h3>
+<pre><code>float branchPhase = spatialPhase + uTime * speed * 1.3;
+float branchSway = sin(branchPhase);
+transformed.x += windDir.x * branchSway * strength * 0.03;</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>잎 떨림</h3>
+<pre><code>float leafPhase = hash(worldPos.xz * 20.0) * TAU;
+float flutter = sin(uTime * 4.0 + leafPhase)
+              + sin(uTime * 6.7 + leafPhase * 1.3) * 0.5;
+transformed += flutter * strength * 0.01;</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./wind-animation.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>
