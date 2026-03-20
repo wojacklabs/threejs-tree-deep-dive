@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>가지 개선 제안 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/proposal.html">← 줄기 제안</a>
+    <h1>가지 + 분기 탐색</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div style="position:absolute;top:12px;left:12px;font-family:'Fira Code',monospace;font-size:11px;color:#8b949e;background:rgba(13,17,23,0.8);padding:8px 12px;border-radius:6px;display:flex;flex-direction:column;gap:3px;z-index:10" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>현재 문제</h2>
+        <div class="diagram">
+<pre>
+  현재 나무 구조:
+  ┌─────────────────────────────┐
+  │ createReferenceVariation()  │
+  │   → 절차적 trunk (새로 만듦) │
+  │   → GLB bush (수관 덩어리)   │
+  │   → merge                   │
+  │                             │
+  │ generateTree() → 호출 안 됨  │
+  │   (여기에 가지 코드가 있었음)  │
+  └─────────────────────────────┘
+
+  결과: 절차적 가지가 없음
+  → bush 메시의 잎 볼륨만 보임
+  → 줄기에서 수관까지 가지 구조 없음
+</pre>
+        </div>
+
+        <h2>개선 방향</h2>
+        <p>캔버스에서 3가지를 비교합니다:</p>
+
+        <h2>1. 줄기만 (현재 상태)</h2>
+        <p>절차적 trunk만 있고 가지 없음.
+           bush(수관)를 빼면 줄기만 덩그러니 서있음.</p>
+
+        <h2>2. 줄기 + 절차적 가지</h2>
+        <p>기존 <code>generateTree()</code>의 가지 시스템을
+           <code>createReferenceVariationGeometry()</code>에 통합.</p>
+        <ul>
+          <li>황금각 배치 (균일 분포)</li>
+          <li>줄기 bend 오프셋 반영</li>
+          <li>처짐(droop) + 높이별 두께/길이 감소</li>
+          <li>나무껍질 색상 (줄기와 동일)</li>
+        </ul>
+
+        <h2>3. 줄기 + 가지 + 잎 클러스터 (최종)</h2>
+        <p>가지 끝에 잎 클러스터를 추가.
+           bush(수관)와 합쳐지면 더 풍성한 나무.</p>
+
+        <h2>구현 계획</h2>
+        <div class="diagram">
+<pre>
+  createReferenceVariationGeometry("tree", seed):
+
+  현재:
+    절차적 trunk + GLB bush → merge
+
+  개선 후:
+    절차적 trunk
+    + 절차적 가지 (generateTree에서 가져옴)
+    + GLB bush (수관)
+    → 전부 merge
+
+  가지가 줄기의 파라미터를 참조:
+    trunkHeight, trunkThickness, bendDir → 연결점 계산
+</pre>
+        </div>
+
+        <h2>파라미터 조절</h2>
+        <p>lil-gui에서 가지 수, 길이, 두께, 처짐, 잎 클러스터를
+           조절하면 2번과 3번 나무에 실시간 반영됩니다.</p>
+
+        <div class="note">
+          가지의 핵심: <strong>줄기와의 자연스러운 연결</strong>.
+          가지 시작점이 줄기의 bend를 따라가야 하고,
+          줄기 반지름에 맞게 바깥으로 시작해야 합니다.
+          황금각(137.5°)으로 배치하면 겹치지 않고 균일하게 퍼집니다.
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>가지 생성 핵심 코드</h2>
+
+        <div class="code-section">
+          <h3>황금각 배치 + 줄기 연결</h3>
+<pre><code>const GOLDEN_ANGLE = π × (3 - √5)  // ≈ 137.5°
+
+for (let i = 0; i < count; i++) {
+  const heightRatio = startHeight + ...
+  const branchY = heightRatio × trunkHeight
+  const azimuth = i × GOLDEN_ANGLE + rand() × 0.4
+
+  // 줄기 bend 오프셋 반영
+  const t = branchY / trunkHeight
+  const bendOffX = bend × t² × bendDirX
+  const startX = bendOffX + cos(azimuth) × trunkRadius × 0.3
+}</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>처짐(droop)</h3>
+<pre><code>// CylinderGeometry 정점을 변형
+const bt = (by + length/2) / length  // 0~1
+bPos.setY(vi, by - droop × bt² × length)
+// 끝으로 갈수록 급격히 처짐 (t² 곡선)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>방향 회전 (Quaternion)</h3>
+<pre><code>const dir = new Vector3(dirX, dirY, dirZ).normalize()
+const up = new Vector3(0, 1, 0)
+const axis = up.cross(dir).normalize()
+const angle = acos(up.dot(dir))
+const quat = new Quaternion().setFromAxisAngle(axis, angle)
+branchGeo.applyMatrix4(makeRotationFromQuaternion(quat))</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./branch-proposal.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

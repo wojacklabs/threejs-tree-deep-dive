@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>줄기 개선 제안 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .info-bar {
+      position: absolute; top: 12px; left: 12px;
+      display: flex; flex-direction: column; gap: 3px; z-index: 10;
+      font-family: 'Fira Code', monospace; font-size: 11px; color: #8b949e;
+      background: rgba(13,17,23,0.8); padding: 8px 12px; border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/">← 나무 Deep Dive</a>
+    <h1>줄기 절차적 교체 제안</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>GLB 줄기 → 절차적 줄기 교체 제안</h2>
+        <p>현재 GLB 줄기는 단순 원기둥에 불과합니다.
+           절차적으로 교체하면 <strong>더 풍부한 형태와 질감</strong>을 구현할 수 있습니다.
+           5단계 Phase로 캔버스에서 비교하며 확인하세요.</p>
+
+        <h2>Phase 1: 기본 교체</h2>
+        <p>GLB trunk를 CylinderGeometry로 교체. 외관 차이 없는 수준.</p>
+        <ul>
+          <li>CylinderGeometry(radial × height segments)</li>
+          <li>bend/twist 기본 적용</li>
+          <li>wind alpha 인코딩 동일</li>
+          <li>bush(수관) merge는 그대로 유지</li>
+        </ul>
+
+        <h2>Phase 2: 뿌리 노출 (Root Flare)</h2>
+        <p>바닥 근처 vertex를 바깥+아래로 확장하여 자연스러운 뿌리 형태.</p>
+        <ul>
+          <li>바닥 25% 영역에만 적용</li>
+          <li>비대칭 노이즈로 뿌리 방향 변화</li>
+          <li><code>rootFlare</code> 파라미터로 강도 조절</li>
+        </ul>
+        <div class="note">
+          실제 나무는 바닥에서 갑자기 직선으로 시작하지 않습니다.
+          뿌리가 벌어지는 형태가 안정감과 사실감을 줍니다.
+        </div>
+
+        <h2>Phase 3: 표면 질감</h2>
+        <p>vertex displacement로 나무껍질 디테일 추가.</p>
+        <ul>
+          <li><strong>세로 홈 (groove)</strong>: sin(angle × freq) — 나무껍질 갈라진 골</li>
+          <li><strong>옹이 (knot)</strong>: 특정 높이에 반지름 돌출 — 가지 흔적</li>
+          <li>위로 갈수록 약해짐 (윗부분은 매끄러움)</li>
+        </ul>
+
+        <h2>Phase 4: 분기 줄기</h2>
+        <p>단일 원기둥이 아닌 Y자 분기. 나무의 구조적 다양성.</p>
+        <ul>
+          <li>분기점 높이/각도 seed 기반</li>
+          <li>아래: 공통 줄기 (두껍게)</li>
+          <li>위: 2개 분기 (각각 다른 두께/길이)</li>
+          <li>각 분기 끝에 bush(수관) 연결 가능</li>
+        </ul>
+
+        <h2>Phase 5: 셰이더 색상</h2>
+        <p>단일 uniform 색상 대신 vertex color + 셰이더로 풍부한 표현.</p>
+        <ul>
+          <li><strong>높이별 그라데이션</strong>: 바닥 어둡고, 위로 밝아짐</li>
+          <li><strong>이끼/지의류</strong>: 바닥 녹색 패치 (노이즈 기반)</li>
+          <li><strong>세로 줄무늬</strong>: 나무껍질 결 표현</li>
+          <li>wrap lighting + hemisphere 셰이딩</li>
+        </ul>
+
+        <h2>구현 순서</h2>
+        <div class="diagram">
+<pre>
+  Phase 1 → 2 → 3 → 4 → 5
+
+  각 Phase는 이전 Phase를 포함합니다:
+  Phase 3 = Phase 1 + 2 + 3
+
+  캔버스에서 5개를 나란히 비교하면서
+  lil-gui로 파라미터를 조절해보세요.
+</pre>
+        </div>
+
+        <h2>성능 비교</h2>
+        <div class="diagram">
+<pre>
+  현재 GLB trunk:  ~9,366 vertices (과도함)
+  절차적 16×24:    ~425 vertices (충분)
+  분기 포함:       ~1,200 vertices (여유)
+
+  100그루 기준:
+  GLB:    936,600 vertices
+  절차적: 42,500~120,000 vertices
+  → 7~22배 절약
+</pre>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>Phase별 핵심 코드</h2>
+
+        <div class="code-section">
+          <h3>Phase 2: 뿌리 노출</h3>
+<pre><code>// 바닥 25%에만 적용
+const rootT = max(0, 1 - t * 4)
+const flare = 1 + rootT² × rootFlare × 10
+
+// 비대칭 노이즈
+const rootAngle = atan2(z, x)
+const rootNoise = sin(rootAngle × 3 + seed)
+x *= flare × (1 + rootT × rootNoise × rootFlare)
+z *= flare</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>Phase 3: 세로 홈</h3>
+<pre><code>const angle = atan2(z, x)
+const groove = sin(angle × grooveFreq + seed) × grooveDepth
+const r = sqrt(x² + z²)
+const newR = r + groove × (1 - t × 0.5)
+x = x/r × newR
+z = z/r × newR</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>Phase 4: Y자 분기</h3>
+<pre><code>// 분기점 아래: 공통 줄기
+buildCylinder(thickness×1.3, thickness, splitH)
+
+// 분기점 위: 2개 분기
+buildCylinder(thickness×0.9, ..., startY=splitH,
+  offsetX = -sin(splitAngle) × ...)
+buildCylinder(thickness×0.8, ..., startY=splitH,
+  offsetX = +sin(splitAngle) × ...)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>Phase 5: 이끼 + 줄무늬</h3>
+<pre><code>// 이끼 (바닥에 녹색)
+const mossT = max(0, 1 - t×2.5) × mossNoise × mossAmount
+color = mix(barkColor, mossColor, mossT)
+
+// 세로 줄무늬
+const stripe = sin(angle×12 + noise(x,y,z)×2)
+color -= stripe × 0.08 × colorVariation</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./proposal.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

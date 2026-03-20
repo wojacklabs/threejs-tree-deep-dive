@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>질감 비교 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/proposal.html">← 제안</a>
+    <h1>나무껍질 질감 방식 비교</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>5가지 질감 방식 비교</h2>
+        <p>같은 CylinderGeometry에 다른 질감 기법을 적용하여 비교합니다.
+           가까이 줌인해서 차이를 확인하세요.</p>
+
+        <h2>1. 기본 (질감 없음)</h2>
+        <p>MeshStandardMaterial + 단색. 매끈한 원기둥.</p>
+
+        <h2>2. Fragment Shader Bump</h2>
+        <p>텍스처 없이 셰이더에서 <strong>normal을 교란</strong>합니다.
+           sin(세로 홈) + FBM 노이즈(거칠기)로 나무껍질 느낌.</p>
+        <ul>
+          <li>텍스처 메모리 0</li>
+          <li>픽셀 단위 해상도</li>
+          <li>세그먼트 수와 무관</li>
+          <li>실루엣은 변하지 않음</li>
+        </ul>
+
+        <h2>3. 절차적 Normal Map</h2>
+        <p>Canvas 2D로 나무껍질 패턴을 생성하여 <strong>normalMap</strong>으로 적용.
+           Three.js 내장 normal map 파이프라인 사용.</p>
+        <ul>
+          <li>512×512 텍스처 1장</li>
+          <li>UV 매핑 의존</li>
+          <li>Three.js 표준 방식 (안정적)</li>
+          <li>seed별로 다른 텍스처 생성 가능</li>
+        </ul>
+
+        <h2>4. Fragment Shader 색상</h2>
+        <p>Normal Map + 셰이더에서 <strong>이끼/줄무늬를 픽셀 단위</strong>로 계산.
+           vertex color 방식보다 훨씬 정밀.</p>
+        <ul>
+          <li>높이별 그라데이션</li>
+          <li>바닥 이끼 (노이즈 패치)</li>
+          <li>세로 줄무늬 (흔들리는 sin)</li>
+          <li>세그먼트 해상도 제한 없음</li>
+        </ul>
+
+        <h2>5. 전부 조합 (최종)</h2>
+        <p>Shader Bump + Normal Map + Shader 색상 모두 적용.
+           최종 나무껍질 퀄리티.</p>
+
+        <div class="note">
+          줌인해서 1번(매끈)과 5번(전부 조합)의 차이를 비교하세요.
+          특히 조명이 닿는 가장자리에서 bump/normal의 효과가 가장 두드러집니다.
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>핵심 코드</h2>
+
+        <div class="code-section">
+          <h3>Shader Bump (normal 교란)</h3>
+<pre><code>// fragment shader에서:
+// sin 세로 홈 + FBM 노이즈
+float groove = sin(uv.x * PI * freq) * 0.6;
+float noise = barkFBM(uv * scale) * strength;
+
+// central difference로 미분
+float hC = groove + noise;
+float hR = /* uv.x + eps */;
+float hU = /* uv.y + eps */;
+
+// normal 교란
+vec3 bump = normalize(vec3(
+  (hC - hR) * bumpScale,
+  (hC - hU) * bumpScale,
+  1.0
+));
+normal = perturb(vNormal, bump);</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>Canvas Normal Map 생성</h3>
+<pre><code>// 512×512 Canvas에 픽셀별 계산
+for (y, x) {
+  // 높이맵 = sin(세로홈) + noise
+  const h = sin(u * PI * 16) + noise(x, y)
+
+  // 미분 → normal
+  const dx = (h - h_right) * scale
+  const dy = (h - h_up) * scale
+
+  // RGB = normal 인코딩
+  pixel.r = dx * 0.5 + 0.5  // [-1,1] → [0,1]
+  pixel.g = dy * 0.5 + 0.5
+  pixel.b = 1.0              // Z = 위를 향함
+}
+material.normalMap = new CanvasTexture(canvas)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>Shader 색상 (이끼+줄무늬)</h3>
+<pre><code>// fragment shader에서 픽셀 단위로:
+float heightT = uv.y;
+
+// 높이별 그라데이션
+vec3 color = mix(darkBark, lightBark, heightT);
+
+// 이끼 (하단 녹색)
+float moss = pow(max(0, 1-ht*2), 2) * noise(pos.xz);
+color = mix(color, mossColor, moss);
+
+// 줄무늬 (sin + noise 위상)
+float stripe = sin(uv.x*PI*16 + noise(pos)*4);
+color -= vec3(0.06, 0.05, 0.03) * stripe;</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./texture-compare.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>
