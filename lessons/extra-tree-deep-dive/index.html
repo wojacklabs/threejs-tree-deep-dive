@@ -1,0 +1,794 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>나무 Deep Dive | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+  <style>
+    .info-bar {
+      position: absolute; top: 12px; left: 12px;
+      display: flex; flex-direction: column; gap: 3px; z-index: 10;
+      font-family: 'Fira Code', monospace; font-size: 11px; color: #8b949e;
+      background: rgba(13,17,23,0.8); padding: 8px 12px; border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/">← 목록</a>
+    <h1>Deep Dive: 나무 렌더링</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div class="info-bar" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>agent-world-viewer의 나무 시스템</h2>
+        <p>실제 프로젝트의 나무 렌더링을 분해하여 재현한 교육 자료입니다.
+           lil-gui의 <strong>View Mode</strong>로 각 단계를 개별적으로 확인하세요.</p>
+
+        <h2>구조: 3개 레이어</h2>
+        <div class="diagram">
+<pre>
+  나무 = 줄기(trunk) + 가지(branches) + 잎(leaves)
+
+  줄기:  tree.glb 참조 모델 + seed별 변형
+  가지:  CylinderGeometry + 황금각 배치 + 처짐(droop)
+  잎:    눈물방울 카드 × 수십 장 → 클러스터 배치
+
+  줄기(GLB) + 가지 + 잎을 mergeGeometries()로 합침
+  → MeshStandardMaterial + onBeforeCompile로 바람/눈/밤 처리
+</pre>
+        </div>
+
+        <h2>Step 1: 줄기 (trunk)</h2>
+
+        <h2>1-1. GLB 기반 줄기 생성</h2>
+        <p>줄기는 <strong>tree.glb 참조 모델</strong>에서 가져옵니다.
+           아티스트가 만든 모델을 seed별로 변형하여 다양성을 확보합니다.</p>
+        <div class="diagram">
+<pre>
+  줄기 생성 흐름:
+
+  tree.glb 로드 (ensureReferenceTemplatesLoaded)
+      ↓
+  "trunk" 이름의 mesh 추출 → 템플릿으로 저장
+      ↓
+  createReferenceVariationGeometry(seed)
+      ↓
+  템플릿 clone → YAW 회전 + 비균일 스케일
+      ↓
+  applyReferenceVariationDeformation(seed)
+      ↓
+  bend + twist + jitter + radiusScale 적용
+      ↓
+  vertex color 설정 (bark 판별 태그 + wind alpha)
+      ↓
+  가지 + 잎과 merge → 최종 나무 mesh
+</pre>
+        </div>
+
+        <h2>1-2. GLB 템플릿 로드</h2>
+        <p><code>ensureReferenceTemplatesLoaded()</code>가 tree.glb를 비동기 로드합니다:</p>
+<pre><code>// line 1166: GLB 로드
+const gltf = await gltfLoader.loadAsync(
+  "/assets/references/infinite-terrain/tree.glb"
+)
+
+// line 1199-1201: "trunk"이 포함된 mesh만 추출
+const trunkSources = importedMeshes.filter(
+  mesh => mesh.name.toLowerCase().includes("trunk")
+)
+
+// line 1215: vertex color를 bark 판별용 flat 값으로 설정
+setGeometryVertexColor(baked, 0.6, 0.3, 0.15)
+// R=0.6 > G=0.3 → fragment shader에서 "bark"로 판별
+
+// line 1227-1230: wind alpha 인코딩
+alpha = ((y - minY) / heightRange) × 0.25
+// 0(바닥) ~ 0.25(꼭대기)</code></pre>
+        <p>이 템플릿은 <strong>한 번만 로드</strong>되고, 이후 모든 나무가 이것을 clone하여 변형합니다.</p>
+
+        <h2>1-3. seed별 변형 — createReferenceVariationGeometry</h2>
+        <p>같은 GLB에서 seed별로 다른 나무를 만드는 핵심 함수입니다:</p>
+<pre><code>// line 1117-1147
+createReferenceVariationGeometry(assetType, seed) {
+  // ① 템플릿 clone (원본 보존)
+  const cloned = template.clone()
+
+  // ② YAW 회전 (seed 기반)
+  const yaw = (seeded01(seed + 0.3) - 0.5) × 0.65  // ±0.325 rad
+  cloned.applyMatrix4(new Matrix4().makeRotationY(yaw))
+
+  // ③ 비균일 스케일
+  const scaleXZ = 0.88 + seeded01(seed + 1.1) × 0.26  // 0.88~1.14
+  const scaleY  = 0.9  + seeded01(seed + 2.3) × 0.34  // 0.9~1.24
+  cloned.applyMatrix4(new Matrix4().makeScale(scaleXZ, scaleY, scaleXZ))
+
+  // ④ 정점 변형 (아래에서 상세 설명)
+  applyReferenceVariationDeformation(cloned, seed, "tree")
+
+  return cloned
+}</code></pre>
+
+        <div class="note">
+          <code>seeded01(seed)</code>은 seed에서 0~1 사이의 결정적 랜덤 값을 반환합니다.
+          같은 seed = 항상 같은 변형. 다른 seed = 다른 나무 형태.
+          각 파라미터에 다른 오프셋(+0.3, +1.1, +2.3...)을 더해
+          파라미터 간 상관관계를 없앱니다.
+        </div>
+
+        <h2>1-4. 정점 변형 — applyReferenceVariationDeformation</h2>
+        <p>clone된 geometry의 모든 정점을 순회하며 4단계 변형을 적용합니다:</p>
+<pre><code>// line 1056-1064: 변형 파라미터 (seed 기반)
+const bendScale  = 0.22     // tree용 (bush는 0.14)
+const twistScale = 0.75     // tree용 (bush는 0.45)
+const jitterScale = 0.018   // tree용 (bush는 0.012)
+
+const crownScale  = 0.8 + seeded01(seed + 5.7) × 0.55  // 0.8~1.35
+const trunkScale  = 0.82 + seeded01(seed + 6.1) × 0.22 // 0.82~1.04
+const bendX  = (seeded01(seed + 7.3) - 0.5) × 0.22     // ±0.11
+const bendZ  = (seeded01(seed + 8.9) - 0.5) × 0.22     // ±0.11
+const twist  = (seeded01(seed + 9.7) - 0.5) × 0.75     // ±0.375 rad
+const stretch = 0.9 + seeded01(seed + 10.9) × 0.35     // 0.9~1.25</code></pre>
+
+        <p><strong>감쇠 함수: smoothstep⁴</strong></p>
+<pre><code>// line 1071-1074
+const t = (y - minY) / heightRange     // 0~1 (바닥~꼭대기)
+const smoothT = t² × (3 - 2t)          // smoothstep
+const topWeight = smoothT × smoothT    // smoothstep² = smoothstep⁴</code></pre>
+        <div class="diagram">
+<pre>
+  감쇠 함수 비교:
+
+  smoothstep⁴ 감쇠:
+  1.0 ┃              ╱
+  0.5 ┃             │
+   0  ┗━━━━━━━━━╱━━
+      0    0.5    1.0
+      (바닥)      (꼭대기)
+
+  높이 0.7 이하: 거의 0 → 줄기 하단은 안정
+  높이 0.7 이상: 급격히 증가 → 수관만 변형
+</pre>
+        </div>
+
+        <div class="note">
+          <code>smoothstep⁴</code>는 줄기 변형이 눈에 잘 안 보이는 이유입니다.
+          하단은 변형이 거의 0이고 수관 부분에만 집중되므로,
+          나무마다 수관 형태가 다르지만 줄기는 안정적으로 보입니다.
+        </div>
+
+        <p><strong>정점별 변형 4단계:</strong></p>
+<pre><code>// line 1066-1094: 각 정점에 대해
+
+// ① 반지름 스케일 (줄기→수관 자연스러운 전환)
+const radiusScale = trunkScale + (crownScale - trunkScale) × smoothT
+px = x × radiusScale
+//   줄기 부분: trunkScale (0.82~1.04) → 거의 원본
+//   수관 부분: crownScale (0.8~1.35) → 확대/축소
+py = y × stretch  // 전체 높이 스케일 (0.9~1.25)
+
+// ② 비틀림 (꼭대기에만 적용)
+const tw = twistAmount × topWeight  // topWeight = smoothstep⁴
+px = px×cos(tw) - pz×sin(tw)       // 2D 회전 행렬
+pz = px×sin(tw) + pz×cos(tw)
+//   twistAmount 범위: ±0.375 rad (≈±21°)
+//   하단: topWeight≈0 → 비틀림 없음
+//   꼭대기: topWeight≈1 → 최대 비틀림
+
+// ③ 굽힘 (꼭대기에만 적용)
+px += bendX × topWeight  // ±0.11 × topWeight
+pz += bendZ × topWeight
+//   하단: 이동 없음
+//   꼭대기: 최대 ±0.11 유닛 이동
+
+// ④ 지터 (미세 정점 오프셋)
+px += (seeded01(…) - 0.5) × 0.018 × smoothT
+pz += (seeded01(…) - 0.5) × 0.018 × smoothT
+py += (seeded01(…) - 0.5) × 0.011 × smoothT
+//   정점마다 다른 seeded random 값
+//   최대 ±0.009 유닛 (거의 안 보이지만 미세한 불규칙성)</code></pre>
+
+        <h2>1-5. seed로 만드는 변형 요약</h2>
+        <div class="diagram">
+<pre>
+  변형 종류        범위              감쇠          효과
+  ──────────────────────────────────────────────────────
+  YAW 회전         ±0.325 rad       없음 (전체)   나무 방향 변경
+  비균일 스케일     XZ: 0.88~1.14    없음 (전체)   굵기 차이
+                   Y: 0.9~1.24                   키 차이
+  radiusScale      0.82~1.35       smoothstep    줄기→수관 전환
+  stretch          0.9~1.25        없음 (Y만)     높이 변형
+  비틀림            ±0.375 rad      smoothstep⁴   수관만 비틀림
+  굽힘              ±0.11           smoothstep⁴   수관만 기울어짐
+  지터              ±0.009          smoothstep     미세 불규칙
+</pre>
+        </div>
+        <p>같은 tree.glb 모델이지만 seed가 다르면 <strong>키, 굵기, 수관 형태, 방향</strong>이
+           모두 달라져서 자연스러운 숲이 됩니다.
+           lil-gui에서 seed를 바꾸면 나무 형태가 변하는 것을 확인할 수 있습니다.</p>
+
+        <h2>1-6. 나무껍질 색상</h2>
+        <p>vertex color RGB는 <strong>분류 태그</strong>일 뿐,
+           색상 표현에 사용되지 않습니다:</p>
+<pre><code>// line 1215: 모든 줄기 정점에 동일한 색 설정
+setGeometryVertexColor(baked, 0.6, 0.3, 0.15)
+// R=0.6, G=0.3, B=0.15 → 전부 같은 값
+
+// fragment shader에서 bark/leaf 판별:
+float isBark = step(vVertexColor.g + 0.02, vVertexColor.r)
+// step(0.32, 0.6) = 1.0 → bark로 판별
+
+// RGB 값은 무시, uniform으로 최종 색상 결정:
+diffuseColor.rgb = uTrunkColor × shade  // #8b6b4a</code></pre>
+
+        <p><strong>Fragment Shader 셰이딩:</strong></p>
+<pre><code>// wrap lighting (그림자를 부드럽게)
+float wrap = 0.4;
+float NdotL = clamp((dot(N, lightDir) + wrap) / (1.0 + wrap), 0.0, 1.0);
+
+// hemisphere (위아래 밝기 차이)
+float hemi = N.y × 0.5 + 0.5;
+
+// 종합
+float shade = mix(0.55, 1.0, NdotL × 0.6 + hemi × 0.4);
+
+// 최종 = uTrunkColor (#8b6b4a) × shade
+diffuseColor.rgb = uTrunkColor × shade;</code></pre>
+
+        <h2>1-7. 바람 Alpha 인코딩 (줄기)</h2>
+        <p>GLB/절차적 모두 동일한 방식으로 Alpha에 바람 레이어를 인코딩합니다:</p>
+<pre><code>// 높이를 0~0.25 범위로 매핑
+colors[vi * 4 + 3] = clamp((y - minY) / heightRange × 0.25, 0, 0.25)
+// 바닥: alpha = 0.0   → 바람 영향 없음
+// 꼭대기: alpha = 0.25 → 최대 흔들림</code></pre>
+
+        <h2>1-8. 줄기 바람 셰이더 (vertex shader)</h2>
+<pre><code>float trunkH = windAlpha / 0.25;            // 0~1로 디코딩
+float trunkPhase = spatialPhase + uTime × uPropsPrimarySpeed;
+float trunkSway = sin(trunkPhase);
+float trunkFactor = trunkH × trunkH;        // 2차 곡선 (바닥 고정)
+float swayAmount = trunkSway × uWindStrength × trunkFactor;
+
+transformed.x += uWindDirection.x × swayAmount × 0.05;  // ±5cm
+transformed.z += uWindDirection.y × swayAmount × 0.05;
+transformed.y -= abs(swayAmount) × 0.007;   // 흔들릴 때 살짝 낮아짐</code></pre>
+
+        <div class="note">
+          줄기가 흔들릴 때 <code>y -= abs(swayAmount) × 0.007</code>로
+          약간 낮아집니다. 실제 나무가 바람에 흔들리면
+          원호 운동으로 살짝 낮아지는 현상을 시뮬레이션합니다.
+        </div>
+
+        <h2>Step 2: 가지 (branches)</h2>
+
+        <h2>2-1. 가지 수와 위치</h2>
+        <p>가지는 <strong>항상 절차적으로 생성</strong>됩니다.
+           Reference GLB(tree.glb)에는 줄기(trunk)와 수관(bush)만 있고
+           가지는 포함되지 않습니다.</p>
+<pre><code>// line 1921: 가지 수 (seed 기반)
+const branchCount = 3 + floor(|noise3D(seed×4, seed, 0)| × 4)
+// 범위: 3~7개
+
+// line 1922-1923: 가지 시작 높이
+const branchStartY = trunkHeight × (0.35 + |noise3D(seed×4.5, 0, 0)| × 0.2)
+// 줄기의 35%~55% 높이에서 시작</code></pre>
+
+        <h2>2-2. 황금각(Golden Angle) 배치</h2>
+        <p>가지가 균일하게 퍼지도록 <strong>황금각</strong>을 사용합니다:</p>
+<pre><code>// line 1934-1935
+const goldenAngle = Math.PI × (3 - Math.sqrt(5))
+// ≈ 2.39996 라디안 ≈ 137.5°
+
+const branchAngleH = i × goldenAngle + noise3D(0, 0, bSeed) × 0.4
+// 각 가지마다 137.5° 회전 + ±0.4 라디안 노이즈</code></pre>
+        <div class="diagram">
+<pre>
+  황금각 배치 (위에서 본 모습):
+
+  해바라기 씨앗 패턴과 동일:
+  1번 → 137.5° → 2번 → 137.5° → 3번 → ...
+
+         2
+       ╱
+  5 ──●── 1      각 가지가 겹치지 않고
+       ╲          자연스럽게 퍼진 분포
+     4   3
+
+  왜 황금각인가?
+  360° / 황금비 ≈ 137.5°
+  → 어떤 정수 배를 해도 같은 각도로 돌아오지 않음
+  → 가장 균일한 분포를 보장
+</pre>
+        </div>
+
+        <h2>2-3. 수직 각도</h2>
+<pre><code>// line 1936-1937: 줄기로부터 벌어지는 각도
+const branchAngleV = 0.35 + heightRatio × 0.35
+                   + |noise3D(bSeed×2, 0, 0)| × 0.25
+// 범위: 0.35~0.95 라디안 (20°~54°)
+// 아래쪽 가지: 더 수평에 가까움 (각도 큼)
+// 위쪽 가지: 더 수직에 가까움 (각도 작음)</code></pre>
+        <div class="diagram">
+<pre>
+  heightRatio 낮음 (아래쪽):    heightRatio 높음 (위쪽):
+
+        │                          │╱ 가지 (작은 각도)
+        │                          │
+        ├──── 가지 (큰 각도)        │
+        │                          │
+</pre>
+        </div>
+
+        <h2>2-4. 가지 Geometry</h2>
+<pre><code>// line 1929-1932: 길이와 두께
+const branchLength = (0.2 + |noise3D(bSeed, 0, 0)| × 0.25)
+                   × (1.15 - heightRatio × 0.4)
+// 범위: ~0.23~0.43 유닛 (위로 갈수록 짧아짐)
+
+const branchThick = (0.025 + |noise3D(0, bSeed, 0)| × 0.02)
+                  × (1.2 - heightRatio × 0.3)
+// 범위: ~0.025~0.04 유닛
+
+// line 1968-1974: CylinderGeometry
+new THREE.CylinderGeometry(
+  branchThick × 0.5,  // 상단: 50%로 가늘어짐
+  branchThick,         // 하단: 원래 두께
+  branchLength,
+  6,                   // 둘레 세그먼트 (줄기의 8보다 적음)
+  4                    // 높이 세그먼트
+)</code></pre>
+
+        <h2>2-5. 처짐(Droop)과 측면 굽힘</h2>
+        <p>중력에 의한 자연스러운 처짐을 2차 곡선으로 시뮬레이션합니다:</p>
+<pre><code>// line 1979-1980
+const droopAmount = 0.08 + |noise3D(bSeed×7.3, 0, 0)| × 0.12
+// 범위: 0.08~0.2 유닛
+
+const sideBend = (noise3D(0, bSeed×8.1, 0) - 0.5) × 0.06
+// 범위: ±0.03 유닛
+
+// 각 정점에 적용:
+const bt = (by + halfLen) / branchLength  // 0~1 along branch
+
+bz += droopAmount × bt² × branchLength   // 2차 곡선 처짐
+bx += sideBend × sin(bt × π) × branchLength  // 사인 측면 굽힘</code></pre>
+        <div class="diagram">
+<pre>
+  처짐 (droop):              측면 굽힘 (sideBend):
+
+  시작 ●─────╲               시작 ●─────╮
+              ╲                          │
+               ╲ 끝                      ╰── 끝
+  bt² 곡선: 끝으로 갈수록      sin(bt×π): 중간이 최대,
+  급격히 처짐                 양 끝은 0
+</pre>
+        </div>
+
+        <h2>2-6. 줄기 연결 (Quaternion 회전)</h2>
+        <p>CylinderGeometry는 기본적으로 Y축(위)을 향합니다.
+           가지 방향 벡터로 회전시켜야 합니다:</p>
+<pre><code>// line 1998-2012: 방향 벡터 → 회전 행렬
+const branchDir = new THREE.Vector3(dirX, dirY, dirZ).normalize()
+const up = new THREE.Vector3(0, 1, 0)
+
+// up → branchDir 회전하는 quaternion 계산
+const axis = up.cross(branchDir).normalize()  // 회전축
+const angle = Math.acos(up.dot(branchDir))    // 회전각
+const quat = new Quaternion().setFromAxisAngle(axis, angle)
+
+// line 2015-2018: 줄기에 연결
+const branchStartX = bendOffsetX + cos(azimuth) × trunkRadius × 0.3
+// 줄기 표면에서 30% 반지름만큼 바깥에서 시작</code></pre>
+
+        <div class="note">
+          가지는 줄기의 <strong>bend(굽힘) 오프셋을 반영</strong>합니다.
+          줄기가 오른쪽으로 휘었으면 그 높이의 가지도 오른쪽으로 이동합니다.
+          이렇게 해야 가지가 줄기에서 떨어져 보이지 않습니다.
+        </div>
+
+        <h2>2-7. 가지 Alpha 인코딩 (바람 레이어)</h2>
+        <p>가지의 alpha는 <strong>가지 방향을 따라 투영</strong>하여 인코딩합니다:</p>
+<pre><code>// line 2021-2037
+// 가지 시작→끝 방향 벡터
+const bDir = (endX - startX, endY - startY, endZ - startZ)
+
+for (let vi = 0; vi &lt; vertexCount; vi++) {
+  // 정점을 가지 방향에 투영 (0=시작, 1=끝)
+  const proj = dot(vertexOffset, bDir) / lengthSq(bDir)
+  const t = clamp(proj, 0, 1)
+  colors[vi * 4 + 3] = 0.25 + t × 0.25
+}
+// alpha 범위: [0.25, 0.50]
+// 0.25 (시작, 줄기 근처) → 0.50 (끝, 최대 흔들림)</code></pre>
+
+        <h2>2-8. 가지 바람 애니메이션</h2>
+        <p>가지에는 <strong>별도의 바람 레이어가 없습니다</strong>.
+           줄기와 동일한 Layer 1(trunk sway)이 적용됩니다:</p>
+<pre><code>// vertex shader:
+float trunkH = windAlpha &lt;= 0.25 ? windAlpha / 0.25 : 1.0;
+// 가지 alpha(0.25~0.5)는 trunkH = 1.0 (최대 흔들림)
+
+// 줄기 꼭대기와 동일한 흔들림 적용
+transformed.x += windDir.x × swayAmount × 0.05;
+transformed.z += windDir.y × swayAmount × 0.05;</code></pre>
+        <div class="note">
+          가지가 줄기의 sway를 그대로 받는 것은 <strong>의도된 설계</strong>입니다.
+          줄기가 오른쪽으로 흔들리면 가지도 함께 오른쪽으로 흔들려야 자연스럽습니다.
+          가지 고유의 추가 흔들림(진동)은 없지만,
+          가지 끝에 달린 잎(alpha 0.5~1.0)이 별도로 펄럭이므로
+          시각적으로 충분한 움직임이 있습니다.
+        </div>
+
+        <h2>Step 3: 잎 (leaves)</h2>
+
+        <h2>3-1. 두 가지 잎 시스템</h2>
+        <p>나무에는 <strong>두 종류의 잎</strong>이 있습니다:</p>
+        <div class="diagram">
+<pre>
+  GLB bush 메시 (수관 덩어리):
+    tree.glb의 "bush_*" 메시 → 잎 볼륨
+    → alpha_leaves.png 텍스처로 잎 모양 cutout
+    → 큰 덩어리 형태 (수관 전체)
+
+  절차적 잎 카드 (개별 잎):
+    LeafCards.three.ts → 눈물방울 형태 5정점
+    → 가지 끝에 클러스터로 배치
+    → 각각 랜덤 방향 회전
+</pre>
+        </div>
+
+        <h2>3-2. GLB bush 잎 처리</h2>
+        <p>tree.glb에서 <code>bush_*</code> 메시를 추출합니다:</p>
+<pre><code>// vertex color: 잎 판별용 (R < G = leaf)
+setGeometryVertexColor(baked, 0.2, 0.8, 0.2)
+// R=0.2, G=0.8 → fragment shader에서 잎으로 판별
+
+// flutter weight: 바람 펄럭임 강도
+const flutterW = 0.5 + (i * 0.07) % 0.5
+// alpha 범위: 0.5~1.0
+// bush 메시마다 다른 flutter weight → 비동기적 펄럭임</code></pre>
+
+        <h2>3-3. 잎 알파 텍스처 (alpha_leaves.png)</h2>
+        <p><strong>2×2 프레임 아틀라스</strong>로, 4가지 잎 모양이 들어있습니다:</p>
+        <div class="diagram">
+<pre>
+  alpha_leaves.png (2×2 atlas):
+  ┌─────┬─────┐
+  │ 잎1  │ 잎2  │
+  ├─────┼─────┤
+  │ 잎3  │ 잎4  │
+  └─────┴─────┘
+
+  각 bush vertex의 UV가 4프레임 중 하나를 참조
+  fragment shader에서 alpha test → 잎 모양 cutout
+</pre>
+        </div>
+
+        <h2>3-4. Fragment Shader 잎 처리</h2>
+<pre><code>// 잎/나무껍질 판별
+float isBark = step(vColor.g + 0.02, vColor.r)
+// R > G+0.02 → bark,  R ≤ G+0.02 → leaf
+
+// 알파 텍스처 샘플링
+vec4 leafSample = texture2D(leafAtlas, vUV)
+float leafAlpha = leafSample.a  // 또는 luminance
+
+// 거리 기반 cutoff 완화
+float distFactor = smoothstep(40.0, 100.0, cameraDistance)
+float cutoff = mix(0.88, 0.1, distFactor)
+// 가까이: cutoff 0.88 (날카로운 잎 경계)
+// 멀리: cutoff 0.1 (부드럽게 사라짐)
+
+if (leafAlpha < cutoff) discard  // 잎 모양 cutout</code></pre>
+
+        <div class="note">
+          <code>alphaCutoff = 0.88</code>은 높은 값입니다.
+          잎 텍스처에서 88% 이상 불투명한 픽셀만 남기므로
+          경계가 날카롭게 잘립니다.
+          거리에 따라 0.1까지 낮아져서 멀리서는 잎이 반투명하게 사라집니다.
+        </div>
+
+        <h2>3-5. 절차적 잎 카드 (LeafCards.three.ts)</h2>
+        <p>가지 끝에 개별 잎을 배치합니다:</p>
+<pre><code>// 눈물방울 형태: 5 vertices, 3 triangles
+const positions = [
+  -halfW, 0, 0,                 // 0: 왼쪽 하단
+   halfW, 0, 0,                 // 1: 오른쪽 하단
+  -midW, midY, curve*0.45,      // 2: 왼쪽 중간 (앞으로 휨)
+   midW, midY, curve*0.45,      // 3: 오른쪽 중간
+   0, height, tipForward,       // 4: 꼭대기 (뾰족)
+]
+const indices = [0,1,2, 1,3,2, 2,3,4]
+
+// midY = height × (0.48~0.66)  가장 넓은 위치
+// midW = halfW × (0.45~0.80)   중간 너비
+// curve = 0.04~0.16            앞으로 굽은 정도</code></pre>
+
+        <h2>3-6. 클러스터 배치</h2>
+        <p>잎 카드를 가지 끝에 <strong>클러스터</strong>로 묶어 배치합니다:</p>
+<pre><code>// 가지 끝 기준으로 구면 분포
+const radial = pow(|noise(cardSeed)|, 0.7) × clusterRadius
+// → 중심에 밀집, 바깥으로 갈수록 성김
+
+const theta = random × 2π       // 둘레 방향
+const lift = |noise()| × radius × 0.7  // 위로 올림
+
+cardX = branchEndX + cos(theta) × radial
+cardY = branchEndY + lift
+cardZ = branchEndZ + sin(theta) × radial
+
+// 각 카드 랜덤 회전
+rotY = theta + noise × 0.6
+rotX = -0.12 + noise × 0.45   // 약간 위를 향함
+rotZ = noise × 0.25</code></pre>
+
+        <h2>3-7. 잎 프레넬 림 (Fresnel Rim)</h2>
+        <p>잎 가장자리에 <strong>역광 효과</strong>를 줍니다:</p>
+<pre><code>// 시선과 법선의 각도에 따라 가장자리 발광
+float fresnel = pow(1.0 - dot(normal, viewDir), fresnelPower)
+              × fresnelStrength × leafMask
+color = mix(color, fresnelColor, fresnel)
+// fresnelColor = 황녹색 (#90c020)</code></pre>
+        <p>태양을 등지고 잎을 보면 가장자리가 밝게 빛나는 효과.</p>
+
+        <h2>3-8. 잎 Subsurface Scattering</h2>
+        <p>얇은 잎을 통해 빛이 투과하는 효과:</p>
+<pre><code>// 잎 끝부분에서 역광 시 녹색 빛
+float sss = max(0.0, dot(-viewDir, sunDir))
+          × tipFactor × 0.12 × ambientIntensity
+color += vec3(0.1, 0.15, 0.05) × sss
+// 역광에서 잎이 연한 녹색으로 빛나는 효과</code></pre>
+
+        <h2>3-9. 잎 바람 펄럭임 (Flutter)</h2>
+        <p>alpha 0.5~1.0 범위의 정점에 적용되는 다중 주파수 펄럭임:</p>
+<pre><code>// vertex shader:
+float flutterW = (alpha - 0.5) / 0.5  // 0~1로 디코딩
+
+// 3중 주파수 합성 (Lesson 03 원리)
+float flutter = sin(time × 4.0 + worldPos.x × 20.0) × 0.5
+              + sin(time × 6.7 + worldPos.z × 15.0) × 0.3
+
+// per-position 노이즈로 위상 분산
+float noise = sin(worldPos.x × 2.0 + worldPos.z × 2.5)
+
+transformed += flutter × flutterW × 0.017 × windStrength × noise
+// 각 잎이 다른 flutter weight → 비동기적 펄럭임</code></pre>
+
+        <h2>3-10. 거리 페이드 (LOD)</h2>
+        <div class="diagram">
+<pre>
+  거리        cutoff    효과
+  ────────────────────────────────
+  0~40m       0.88     날카로운 잎 경계
+  40~100m     0.88→0.1  점점 투명해짐
+  100m+       0.1      거의 사라짐 (안개에 녹아듬)
+</pre>
+        </div>
+
+        <h2>Step 4: Vertex Color Alpha 인코딩</h2>
+        <p>이것이 이 시스템의 <strong>핵심 트릭</strong>입니다.
+           Vertex Color의 Alpha 채널에 <strong>바람 레이어</strong>를 인코딩합니다:</p>
+        <div class="diagram">
+<pre>
+  Alpha 값         의미              바람 반응
+  ────────────────────────────────────────
+  0.00 ~ 0.25     줄기 (trunk)       느린 전체 흔들림
+  0.25 ~ 0.50     가지 (branch)      중간 흔들림
+  0.50 ~ 1.00     잎 (leaf)          빠른 펄럭임
+
+  하나의 merged geometry인데
+  vertex shader에서 alpha 값을 읽어
+  부위별로 다른 바람 애니메이션을 적용!
+</pre>
+        </div>
+
+        <div class="note">
+          <code>mergeGeometries()</code>로 줄기+가지+잎을 하나의 mesh로 합치면
+          draw call은 1이지만, 부위별 다른 움직임이 필요합니다.
+          Alpha 채널에 레이어 정보를 인코딩하여 vertex shader에서 분기하는 것이
+          프로젝트의 핵심 최적화 기법입니다.
+        </div>
+
+        <h2>Step 5: onBeforeCompile — 셰이더 주입</h2>
+        <p>프로젝트는 <code>ShaderMaterial</code>이 아닌
+           <code>MeshStandardMaterial.onBeforeCompile</code>을 사용합니다:</p>
+<pre><code>material.onBeforeCompile = (shader) => {
+  // Three.js의 내장 PBR 셰이더를 그대로 쓰면서
+  // 바람/눈/밤 코드만 주입
+
+  // vertex shader에 바람 코드 삽입
+  shader.vertexShader = shader.vertexShader
+    .replace('#include &lt;begin_vertex&gt;', `
+      #include &lt;begin_vertex&gt;
+      // 여기에 바람 로직 추가
+    `)
+
+  // uniform 참조 저장 (매 프레임 업데이트용)
+  material.userData.shader = shader
+}</code></pre>
+
+        <div class="note">
+          <strong>onBeforeCompile vs ShaderMaterial:</strong><br>
+          <code>ShaderMaterial</code>은 조명/그림자를 직접 구현해야 합니다.<br>
+          <code>onBeforeCompile</code>은 Three.js PBR(조명/그림자/환경맵)을
+          <strong>유지하면서</strong> 바람 같은 커스텀 효과만 추가합니다.
+          실무에서 더 많이 사용하는 패턴입니다.
+        </div>
+
+        <h2>Step 6: 바람 애니메이션 (3 레이어)</h2>
+        <p><code>windStrength</code>와 <code>windSpeed</code>를 조절해보세요.</p>
+        <div class="diagram">
+<pre>
+  Layer 1: 줄기 흔들림 (alpha &lt; 0.25)
+    sin(worldX × 0.5 + time × speed)
+    높이² 에 비례 (바닥은 고정, 꼭대기 최대)
+    약 ±5cm 좌우
+
+  Layer 2: 가지 흔들림 (0.25 ~ 0.5)
+    sin(worldX × 1.5 + time × speed × 1.5)
+    가지 길이에 비례
+    약 ±3cm
+
+  Layer 3: 잎 펄럭임 (0.5 ~ 1.0)
+    sin(time × 4.0) + sin(time × 6.7) × 0.5
+    다중 주파수 합성 (Lesson 03!)
+    per-position 해시로 위상 분산
+    약 ±1.7cm
+</pre>
+        </div>
+
+        <h2>Step 7: 눈과 밤</h2>
+        <p><code>snowCover</code>와 <code>nightFactor</code>를 조절해보세요.</p>
+        <p><strong>눈:</strong> fragment shader에서 법선의 Y 성분(위를 향하는 면)에만
+           흰색을 블렌딩. 잎에는 1.3배 더 많이 적재.</p>
+        <p><strong>밤:</strong> <code>color *= (1 - nightFactor × 0.9)</code>로
+           전체 어둡게. 배경/안개 색도 함께 변경.</p>
+
+        <h2>Step 8: 숲 생성 (instanced)</h2>
+        <p>View Mode를 <strong>instanced</strong>로 변경하세요.</p>
+        <p>seed를 변형하여 20그루를 생성합니다.
+           각 나무는 다른 <code>trunkHeight</code>, <code>crownScale</code>,
+           위치, 회전, 스케일을 가집니다.</p>
+
+        <div class="note">
+          실제 프로젝트에서는 <strong>reference GLB 기반 변형</strong>을 사용합니다:<br>
+          1. 하나의 tree.glb를 로드<br>
+          2. seed별로 YAW/bend/crown scale/twist 등을 랜덤 변형<br>
+          3. 절차적 생성보다 빠르고, 아티스트 품질 유지<br>
+          GLB 없을 때만 이 레슨의 절차적 방식으로 폴백합니다.
+        </div>
+
+        <h2>프로젝트 아키텍처 요약</h2>
+        <div class="diagram">
+<pre>
+  ProceduralAssetGenerator.ts
+  ├── generateTree() — 절차적 메시 생성
+  │   ├── trunk: CylinderGeo + bend/twist/bark
+  │   ├── branches: CylinderGeo + golden angle + droop
+  │   └── leaves: tear-drop cards × clusters
+  ├── createReferenceVariationGeometry() — GLB 변형
+  └── buildTreeMaterial() — onBeforeCompile 셰이더
+
+  ProceduralPropsRenderer.ts
+  ├── loadProps() — 씬에 배치
+  ├── updateWeather() — 바람/눈/밤 uniform 업데이트
+  └── dispose() — 메모리 해제
+</pre>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>핵심 코드 분석</h2>
+
+        <div class="code-section">
+          <h3>Vertex Color Alpha 인코딩</h3>
+<pre><code>// 줄기: alpha = heightT × 0.25 (0~0.25)
+colors[i * 4 + 3] = heightT * 0.25
+
+// 가지: alpha = 0.25 + branchT × 0.25 (0.25~0.5)
+colors[j * 4 + 3] = 0.25 + lt * 0.25
+
+// 잎: alpha = 0.5 + random × 0.5 (0.5~1.0)
+colors[v * 4 + 3] = 0.5 + rand() * 0.5
+
+// vertex shader에서 디코딩:
+if (alpha < 0.25) → trunk wind
+else if (alpha < 0.5) → branch wind
+else → leaf flutter</code></pre>
+          <p>하나의 Float32Array(RGBA)로 색상과 바람 정보를 동시에 전달합니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>onBeforeCompile 패턴</h3>
+<pre><code>const material = new THREE.MeshStandardMaterial({
+  vertexColors: true,
+  roughness: 1.0,
+  side: THREE.DoubleSide,
+})
+
+material.onBeforeCompile = (shader) => {
+  // 1. uniform 추가
+  shader.uniforms.uTime = { value: 0 }
+  shader.uniforms.uWindStrength = { value: 0.75 }
+
+  // 2. vertex shader에 코드 삽입
+  shader.vertexShader = shader.vertexShader
+    .replace('#include &lt;common&gt;', `
+      #include &lt;common&gt;
+      uniform float uTime;
+      uniform float uWindStrength;
+    `)
+    .replace('#include &lt;begin_vertex&gt;', `
+      #include &lt;begin_vertex&gt;
+      // 바람 로직...
+      transformed.x += sin(uTime) * 0.05;
+    `)
+
+  // 3. 참조 저장
+  material.userData.shader = shader
+}
+
+// 매 프레임:
+const shader = material.userData.shader
+if (shader) shader.uniforms.uTime.value = elapsed</code></pre>
+          <p><code>#include &lt;begin_vertex&gt;</code>는 Three.js가
+             <code>transformed</code> 변수를 선언하는 위치입니다.
+             여기 뒤에 코드를 삽입하면 정점 위치를 수정할 수 있습니다.</p>
+        </div>
+
+        <div class="code-section">
+          <h3>눈물방울 잎 카드</h3>
+<pre><code>// 5 vertices, 3 triangles
+const vertices = new Float32Array([
+  -w/2, 0, 0,           // 0: 왼쪽 하단
+  w/2, 0, 0,            // 1: 오른쪽 하단
+  w/2, h*0.6, curve,    // 2: 오른쪽 중간 (곡면)
+  -w/2, h*0.6, curve,   // 3: 왼쪽 중간
+  0, h, curve*0.5,      // 4: 꼭대기 (뾰족)
+])
+const indices = [0,1,2, 0,2,3, 3,2,4]
+
+// 클러스터당 4~12장, 구면 분포로 수관 형태</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>바람 3레이어 (vertex shader)</h3>
+<pre><code>// Layer 1: Trunk Sway
+float swayPhase = worldPos.x * 0.5 + uTime * speed;
+float sway = sin(swayPhase) * trunkT² * 0.05;
+transformed.x += sway * uWindStrength;
+
+// Layer 2: Branch Sway
+float branchPhase = worldPos.x * 1.5 + uTime * speed * 1.5;
+transformed.x += sin(branchPhase) * branchT * 0.03;
+
+// Layer 3: Leaf Flutter (다중 주파수)
+float flutter = sin(uTime * 4.0 + worldPos.x * 20.0) * 0.5
+              + sin(uTime * 6.7 + worldPos.z * 15.0) * 0.3;
+// per-position 노이즈로 위상 분산
+float noise = sin(worldPos.x * 2.0 + worldPos.z * 2.5);
+transformed += flutter * flutterW * 0.017 * noise;</code></pre>
+          <p>Lesson 03의 파동 합성이 여기서 실전 적용됩니다.
+             다중 주파수 + per-position 해시 = 자연스러운 잎 움직임.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

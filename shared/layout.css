@@ -1,0 +1,247 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;600;700&family=Fira+Code:wght@400;500&display=swap');
+
+* { margin: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'Noto Sans KR', sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+  overflow: hidden;
+}
+
+/* ── Header ── */
+.lesson-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  height: 48px;
+}
+.lesson-header a {
+  color: #58a6ff;
+  text-decoration: none;
+  font-size: 14px;
+}
+.lesson-header a:hover { text-decoration: underline; }
+.lesson-header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #e6edf3;
+}
+
+/* ── Main Layout ── */
+.lesson-layout {
+  display: flex;
+  height: calc(100vh - 48px);
+}
+
+/* ── Canvas Panel (left) ── */
+.canvas-panel {
+  flex: 1;
+  position: relative;
+  background: #010409;
+  min-width: 0;
+}
+.canvas-panel canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* ── Tab Panel (right) ── */
+.tab-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  border-left: 1px solid #30363d;
+  min-width: 0;
+  max-width: 50%;
+}
+
+/* ── Tab Buttons ── */
+.tab-buttons {
+  display: flex;
+  border-bottom: 1px solid #30363d;
+  background: #161b22;
+  flex-shrink: 0;
+}
+.tab-btn {
+  flex: 1;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: #8b949e;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: 'Noto Sans KR', sans-serif;
+  font-weight: 600;
+  transition: color 0.15s, border-color 0.15s;
+  border-bottom: 2px solid transparent;
+}
+.tab-btn:hover { color: #e6edf3; }
+.tab-btn.active {
+  color: #e6edf3;
+  border-bottom-color: #58a6ff;
+}
+
+/* ── Tab Content ── */
+.tab-content {
+  display: none;
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  line-height: 1.8;
+}
+.tab-content.active { display: block; }
+
+.tab-content h2 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 24px 0 12px;
+  color: #58a6ff;
+  border-bottom: 1px solid #21262d;
+  padding-bottom: 6px;
+}
+.tab-content h2:first-child { margin-top: 0; }
+
+.tab-content p {
+  margin: 8px 0;
+  font-size: 15px;
+  color: #c9d1d9;
+}
+
+.tab-content strong { color: #e6edf3; }
+.tab-content em { color: #d2a8ff; font-style: normal; }
+
+.tab-content ul, .tab-content ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.tab-content li {
+  margin: 4px 0;
+  font-size: 15px;
+}
+
+/* ── Code blocks ── */
+.tab-content pre {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  padding: 16px;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 12px 0;
+}
+.tab-content code {
+  font-family: 'Fira Code', monospace;
+  font-size: 13px;
+}
+.tab-content p code,
+.tab-content li code {
+  background: #161b22;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #79c0ff;
+  font-size: 13px;
+}
+
+/* ── Diagram ── */
+.diagram {
+  margin: 16px 0;
+}
+.diagram pre {
+  background: #161b22;
+  color: #7ee787;
+  border: 1px solid #238636;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Highlight annotation ── */
+.note {
+  background: #1f2937;
+  border-left: 3px solid #58a6ff;
+  padding: 12px 16px;
+  margin: 12px 0;
+  border-radius: 0 6px 6px 0;
+  font-size: 14px;
+}
+
+/* ── Code tab specific ── */
+.code-section { margin-bottom: 32px; }
+.code-section h3 {
+  font-size: 15px;
+  color: #d2a8ff;
+  margin-bottom: 8px;
+}
+.code-comment {
+  color: #8b949e;
+  font-size: 13px;
+  margin: 4px 0;
+}
+
+/* ── Index page ── */
+.index-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  overflow-y: auto;
+  height: 100vh;
+}
+.index-container h1 {
+  font-size: 28px;
+  margin-bottom: 8px;
+}
+.index-container .subtitle {
+  color: #8b949e;
+  margin-bottom: 40px;
+  font-size: 15px;
+}
+
+.phase-title {
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #58a6ff;
+  margin: 32px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #21262d;
+}
+
+.lesson-list {
+  list-style: none;
+  padding: 0;
+}
+.lesson-list li { margin: 0; }
+.lesson-list a {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: #e6edf3;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: background 0.15s;
+  font-size: 15px;
+}
+.lesson-list a:hover { background: #161b22; }
+.lesson-num {
+  color: #8b949e;
+  font-family: 'Fira Code', monospace;
+  font-size: 13px;
+  min-width: 28px;
+}
+.lesson-desc {
+  color: #8b949e;
+  font-size: 13px;
+  margin-left: auto;
+}
+.lesson-list .disabled {
+  pointer-events: none;
+  opacity: 0.35;
+}
