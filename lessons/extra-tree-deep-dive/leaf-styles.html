@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>잎 스타일 비교 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/branch-proposal.html">← 가지 제안</a>
+    <h1>잎 스타일 비교</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+      <div style="position:absolute;top:12px;left:12px;font-family:'Fira Code',monospace;font-size:11px;color:#8b949e;background:rgba(13,17,23,0.8);padding:8px 12px;border-radius:6px;display:flex;flex-direction:column;gap:3px;z-index:10" id="info"></div>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>4가지 잎 스타일 비교</h2>
+        <p>같은 줄기+가지 뼈대에 다른 잎 방식을 적용하여 비교합니다.
+           🎲 버튼으로 다른 seed를 시도해보세요.</p>
+
+        <h2>A. 리얼리스틱 (개별 잎 카드)</h2>
+        <ul>
+          <li>PlaneGeometry에 잎 모양 텍스처 (Canvas 생성)</li>
+          <li>가지 끝에 수백 장 배치 (구면 분포)</li>
+          <li>alphaTest로 잎 모양 cutout</li>
+          <li>개별 잎의 방향/크기 랜덤</li>
+        </ul>
+        <div class="diagram">
+<pre>
+  장점: 가장 사실적, 개별 잎 보임
+  단점: draw call 폭발 (잎 수백 개 × 나무 수)
+  성능: ⭐ (많은 나무에 비실용적)
+</pre>
+        </div>
+
+        <h2>B. 스타일라이즈드 (구/타원 클러스터)</h2>
+        <ul>
+          <li>IcosahedronGeometry를 납작하게 + 노이즈 변형</li>
+          <li>flatShading으로 만화풍</li>
+          <li>가지 끝에 2~4개 덩어리</li>
+          <li>색상 변형으로 다양성</li>
+        </ul>
+        <div class="diagram">
+<pre>
+  장점: 성능 최고, 스타일 일관성
+  단점: 잎 느낌 약함, 실루엣 단순
+  성능: ⭐⭐⭐⭐⭐
+</pre>
+        </div>
+
+        <h2>C. 빌보드 클러스터 (다중 잎 텍스처)</h2>
+        <ul>
+          <li>여러 잎이 그려진 텍스처 1장을 PlaneGeometry에 적용</li>
+          <li>카드 수십 장을 겹쳐서 수관 형성</li>
+          <li>카드당 여러 잎이 보여서 효율적</li>
+          <li>대부분의 게임이 사용하는 방식</li>
+        </ul>
+        <div class="diagram">
+<pre>
+  장점: 성능/퀄리티 균형, 업계 표준
+  단점: 가까이 보면 평면 카드 보임
+  성능: ⭐⭐⭐⭐
+</pre>
+        </div>
+
+        <h2>D. 셰이더 기반 (구체 + cutout)</h2>
+        <ul>
+          <li>SphereGeometry에 셰이더로 잎 패턴 생성</li>
+          <li>노이즈 기반 discard로 잎 형태</li>
+          <li>프레넬 림, 색상 변화 셰이더 내장</li>
+          <li>geometry 최소, 셰이더가 모든 것 처리</li>
+        </ul>
+        <div class="diagram">
+<pre>
+  장점: geometry 비용 최소, 유연한 표현
+  단점: 실루엣이 구체 형태, 가까이 보면 패턴
+  성능: ⭐⭐⭐⭐
+</pre>
+        </div>
+
+        <h2>비교 요약</h2>
+        <div class="diagram">
+<pre>
+  방식         퀄리티  성능    draw calls  구현 복잡도
+  ─────────────────────────────────────────────
+  A 리얼리스틱   ⭐⭐⭐⭐  ⭐       많음        중간
+  B 스타일라이즈  ⭐⭐    ⭐⭐⭐⭐⭐  적음        낮음
+  C 빌보드       ⭐⭐⭐   ⭐⭐⭐⭐   보통        중간
+  D 셰이더       ⭐⭐⭐   ⭐⭐⭐⭐   적음        높음
+</pre>
+        </div>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>각 스타일 핵심 코드</h2>
+
+        <div class="code-section">
+          <h3>A. 개별 잎 카드</h3>
+<pre><code>// Canvas로 잎 텍스처 생성
+ctx.beginPath()
+ctx.bezierCurveTo(...)  // 잎 윤곽
+ctx.fill()
+// + 잎맥 stroke
+
+// PlaneGeometry에 적용
+const leafGeo = new PlaneGeometry(0.15, 0.18)
+material.map = leafTexture
+material.alphaTest = 0.3
+// 가지 끝에 30~50장 구면 배치</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>B. 스타일라이즈드</h3>
+<pre><code>const geo = new IcosahedronGeometry(radius, 2)
+// Y축 눌러서 납작하게
+pos.setY(i, y * 0.7)
+// 노이즈로 울퉁불퉁
+pos *= 1 + sin(x*10) * cos(z*10) * 0.15
+material.flatShading = true</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>C. 빌보드 클러스터</h3>
+<pre><code>// 여러 잎이 그려진 텍스처 1장
+for (12 leaves) {
+  ctx.ellipse(x, y, w, h, rot, 0, 2π)
+}
+// PlaneGeometry 카드 6~10장 겹침
+// 각 카드 랜덤 방향 회전</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>D. 셰이더</h3>
+<pre><code>// fragment shader에서 잎 패턴
+float pattern = noise(worldPos * 8.0)
+             + noise(worldPos * 16.0) * 0.3;
+if (pattern < 0.5) discard;
+
+// 색상 변화
+color = mix(green1, green2, pattern);
+// + fresnel rim + 조명</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./leaf-styles.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>

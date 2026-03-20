@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>잎 디자인 | Three.js 학습</title>
+  <link rel="stylesheet" href="/shared/layout.css" />
+</head>
+<body>
+  <header class="lesson-header">
+    <a href="/lessons/extra-tree-deep-dive/leaf-styles.html">← 스타일 비교</a>
+    <h1>잎 모양 + 색상 설계</h1>
+    <span></span>
+  </header>
+
+  <div class="lesson-layout">
+    <div class="canvas-panel" style="position:relative;">
+      <canvas id="c"></canvas>
+    </div>
+
+    <div class="tab-panel">
+      <nav class="tab-buttons">
+        <button class="tab-btn active" data-tab="concept">개념</button>
+        <button class="tab-btn" data-tab="code">코드</button>
+      </nav>
+
+      <div class="tab-content active" id="tab-concept">
+        <h2>잎 4종 디자인</h2>
+        <p>활엽수 잎 4종을 Canvas 2D bezierCurve로 생성합니다.
+           각각 다른 형태로, 건강한 잎만 포함합니다.</p>
+
+        <h2>잎 형태</h2>
+        <div class="diagram">
+<pre>
+  1. 타원형 (참나무)     2. 뾰족 타원 (느티나무)
+     넓고 둥근 형태          길고 뾰족한 형태
+
+  3. 둥근 넓은잎 (보리수)  4. 비대칭 (자작나무)
+     원형에 가까운 형태       좌우 비대칭
+</pre>
+        </div>
+
+        <h2>색상 처리 방식 비교</h2>
+
+        <p><strong>방식 A: 텍스처에 색상 포함</strong></p>
+        <ul>
+          <li>아틀라스 자체에 녹색 그라데이션 + 잎맥</li>
+          <li>잎맥, 중심부 밝음 등 <strong>디테일 표현 가능</strong></li>
+          <li>계절 변화 시 아틀라스 재생성 필요</li>
+          <li>InstancedMesh의 setColorAt이 곱셈으로 작용 → 약간의 색상 변형 가능</li>
+        </ul>
+
+        <p><strong>방식 B: 흰색/회색 텍스처 + color tint</strong></p>
+        <ul>
+          <li>텍스처는 형태+명암만 (greyscale)</li>
+          <li>material.color 또는 vertex color로 착색</li>
+          <li>계절 변화: color만 바꾸면 됨 (텍스처 재생성 불필요)</li>
+          <li>잎맥 색상 분리가 어려움 (전체가 같은 tint)</li>
+        </ul>
+
+        <div class="note">
+          <strong>추천: 방식 A</strong><br>
+          잎맥, 그라데이션 등 디테일이 퀄리티에 큰 차이를 만듭니다.
+          InstancedMesh의 <code>setColorAt</code>이 텍스처 색상에 곱셈으로 적용되므로,
+          기본 녹색 텍스처 위에 인스턴스별 약간의 색상 변형(연두/진녹/황녹)을 줄 수 있습니다.
+          계절 변화가 필요하면 아틀라스를 2~3장 미리 생성해두면 됩니다.
+        </div>
+
+        <h2>아틀라스 구조</h2>
+        <div class="diagram">
+<pre>
+  512×512 텍스처 1장:
+  ┌────────┬────────┐
+  │ 256×256 │ 256×256 │
+  │ 타원형  │ 뾰족형  │
+  ├────────┼────────┤
+  │ 둥근형  │ 비대칭  │
+  │ 256×256 │ 256×256 │
+  └────────┴────────┘
+
+  각 잎: bezierCurve 윤곽 + radialGradient + 잎맥
+  배경: 투명 (alpha = 0)
+</pre>
+        </div>
+
+        <h2>색상 파라미터</h2>
+        <p>lil-gui에서 HSL 값을 조절하여 전체 잎 색감을 변경할 수 있습니다.
+           잎맥은 기본 색보다 약간 어두운 톤으로 자동 계산됩니다.</p>
+
+        <h2>다음 단계</h2>
+        <p>잎 모양과 색상이 확정되면:</p>
+        <ol>
+          <li>아틀라스 텍스처 최종 확정</li>
+          <li>InstancedMesh 배치 시스템 구현</li>
+          <li>바람 셰이더 적용</li>
+          <li>LOD 시스템</li>
+        </ol>
+      </div>
+
+      <div class="tab-content" id="tab-code">
+        <h2>잎 생성 코드</h2>
+
+        <div class="code-section">
+          <h3>bezierCurve로 잎 윤곽</h3>
+<pre><code>ctx.beginPath()
+ctx.moveTo(cx, cy - s * 0.48)  // 꼭대기
+ctx.bezierCurveTo(              // 오른쪽 곡선
+  cx + s*0.35, cy - s*0.35,
+  cx + s*0.4, cy + s*0.1,
+  cx + s*0.2, cy + s*0.4
+)
+ctx.quadraticCurveTo(cx, cy + s*0.5, cx, cy + s*0.48)
+// 왼쪽 대칭 ...
+ctx.closePath()
+ctx.fill()</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>radialGradient (중심 밝게)</h3>
+<pre><code>const grad = ctx.createRadialGradient(
+  cx - s*0.1, cy - s*0.1, 0,  // 중심 (약간 좌상)
+  cx, cy, s * 0.5              // 외곽
+)
+grad.addColorStop(0, 'hsl(115, 60%, 46%)')   // 밝은 중심
+grad.addColorStop(0.6, 'hsl(110, 55%, 38%)') // 기본
+grad.addColorStop(1, 'hsl(105, 50%, 33%)')   // 어두운 가장자리</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>잎맥 (quadraticCurve)</h3>
+<pre><code>// 중심맥
+ctx.moveTo(cx, cy - s*0.4)
+ctx.lineTo(cx, cy + s*0.45)
+
+// 측맥 3쌍 (좌우 대칭)
+ctx.moveTo(cx, cy + s*y)
+ctx.quadraticCurveTo(
+  cx + s*dx*0.6, cy + s*(y + dy*0.3),
+  cx + s*dx, cy + s*(y + dy)
+)</code></pre>
+        </div>
+
+        <div class="code-section">
+          <h3>색상 방식 A: 텍스처 색상 + setColorAt 변형</h3>
+<pre><code>// 아틀라스: 녹색 그라데이션 포함
+const atlas = renderAtlas(512)
+material.map = new CanvasTexture(atlas)
+
+// 인스턴스별 미세 색상 변형 (곱셈)
+instancedMesh.setColorAt(i, new Color().setHSL(
+  0.3 + rand() * 0.05,  // 약간의 hue 변형
+  0.8 + rand() * 0.2,
+  0.8 + rand() * 0.2    // 밝기 변형
+))
+// → 텍스처 색 × instance color = 최종 색
+// → 녹색 텍스처 × 약간 노란 tint = 황록색</code></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./leaf-design.ts"></script>
+  <script type="module" src="/shared/tabs.ts"></script>
+</body>
+</html>
